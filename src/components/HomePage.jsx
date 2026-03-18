@@ -170,11 +170,6 @@ export function HomePage({ onEnterEditor }) {
               </button>
             </form>
 
-            {!serverAvailable && (
-              <p className="home-warning">
-                ☁ Cloud mode — projects are session-only. Use the Download button in the toolbar to save your work as a .json file.
-              </p>
-            )}
 
             {/* Open from file / drag-drop */}
             <div
@@ -214,7 +209,7 @@ export function HomePage({ onEnterEditor }) {
             <h2 className="home-panel__title">Recent Projects</h2>
 
             {!serverAvailable && (
-              <p className="home-panel__empty">☁ Cloud mode — open a .json file or create a new project to get started.</p>
+              <p className="home-panel__empty">Create a new project or open a .json file to get started.</p>
             )}
 
             {serverAvailable && loadingProjects && (
