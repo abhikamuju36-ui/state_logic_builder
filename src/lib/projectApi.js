@@ -57,11 +57,16 @@ export async function deleteProjectFile(filename) {
   return res.json();
 }
 
-/** Check if the project API server is available. */
+/** Check if the project API server is available.
+ *  Verifies the response is real JSON (not the SPA HTML fallback from Cloudflare Pages). */
 export async function isServerAvailable() {
   try {
     const res = await fetch(API_BASE, { method: 'GET' });
-    return res.ok;
+    if (!res.ok) return false;
+    // Cloudflare Pages SPA fallback returns text/html with 200 — that is NOT our API.
+    // Only treat the server as available when the response is actually JSON.
+    const contentType = res.headers.get('content-type') || '';
+    return contentType.includes('application/json');
   } catch {
     return false;
   }
