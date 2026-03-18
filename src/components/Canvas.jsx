@@ -1,0 +1,688 @@
+/**
+ * Canvas - React Flow diagram editor for state logic diagrams.
+ * Features:
+ *   - onConnectEnd: drag handle to empty canvas → create node + auto-connect
+ *   - addNodeWithAutoConnect: shared helper for + button and sidebar drop
+ *   - Ctrl+D (or Cmd+D): duplicate the currently selected node
+ *   - Auto-generated verify conditions on edges via buildVerifyLabel
+ */
+
+import { useCallback, useRef, useEffect, useMemo, useState } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  BackgroundVariant,
+  useReactFlow,
+  SelectionMode,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+
+import { StateNode } from './nodes/StateNode.jsx';
+import { DecisionNode } from './nodes/DecisionNode.jsx';
+import { RoutableEdge } from './edges/RoutableEdge.jsx';
+import { DrawingConnectionLine } from './edges/DrawingConnectionLine.jsx';
+import { useDiagramStore } from '../store/useDiagramStore.js';
+import { buildVerifyLabel } from '../lib/conditionBuilder.js';
+import { computeStateNumbers } from '../lib/computeStateNumbers.js';
+
+const nodeTypes = { stateNode: StateNode, decisionNode: DecisionNode };
+const edgeTypes = { routableEdge: RoutableEdge };
+
+/** Build edge condition data from the source node's actions */
+function getVerifyEdgeData(sm, sourceNodeId) {
+  if (!sm) return { conditionType: 'ready', label: 'Ready' };
+  const sourceNode = (sm.nodes ?? []).find(n => n.id === sourceNodeId);
+
+  // Initial/Home node → Ready condition
+  if (sourceNode?.data?.isInitial) {
+    return { conditionType: 'ready', label: 'Ready' };
+  }
+
+  const devices = sm.devices ?? [];
+  if (!sourceNode || (sourceNode.data?.actions ?? []).length === 0) {
+    return { conditionType: 'ready', label: 'Ready' };
+  }
+
+  // CheckResults branching: auto-assign outcome to this edge
+  const actions = sourceNode.data?.actions ?? [];
+  const checkAction = actions.find(a => {
+    const dev = devices.find(d => d.id === a.deviceId);
+    return dev?.type === 'CheckResults';
+  });
+  if (checkAction) {
+    const checkDevice = devices.find(d => d.id === checkAction.deviceId);
+    const outcomes = checkDevice?.outcomes ?? [];
+
+    // SINGLE CONDITION: linear verify (no branching)
+    if (outcomes.length === 1) {
+      const outcome = outcomes[0];
+      const label = outcome.label || 'Verify';
+      return {
+        conditionType: 'verify',
+        label,
+        conditions: [{
+          tag: outcome.label,
+          state: outcome.condition === 'off' || outcome.condition === 'outOfRange' ? 'Off' : 'On',
+          role: 'verify-input',
+          deviceId: checkDevice.id,
+          outcomeId: outcome.id,
+          inputRef: outcome.inputRef,
+          condition: outcome.condition,
+        }],
+      };
+    }
+
+    // 2+ OUTCOMES: branching — auto-assign next unused outcome
+    const existingEdges = (sm.edges ?? []).filter(e => e.source === sourceNodeId);
+    const usedOutcomeIds = new Set(
+      existingEdges
+        .filter(e => e.data?.conditionType === 'checkResult')
+        .map(e => e.data?.outcomeId)
+    );
+    const nextOutcome = outcomes.find(o => !usedOutcomeIds.has(o.id));
+    if (nextOutcome) {
+      const outcomeIdx = outcomes.indexOf(nextOutcome);
+      const edgeLabel = nextOutcome.label || `Branch ${outcomeIdx + 1}`;
+      return {
+        conditionType: 'checkResult',
+        deviceId:      checkDevice.id,
+        outcomeId:     nextOutcome.id,
+        outcomeLabel:  edgeLabel,
+        outcomeIndex:  outcomeIdx,
+        label:         edgeLabel,
+        inputRef:      nextOutcome.inputRef,
+        condition:     nextOutcome.condition,
+        paramDeviceId: nextOutcome.paramDeviceId,
+        paramScope:    nextOutcome.paramScope,
+        crossSmId:     nextOutcome.crossSmId,
+      };
+    }
+    return { conditionType: 'ready', label: 'Ready' };
+  }
+
+  // VisionInspect branching: auto-assign outcome to this edge
+  const visionAction = actions.find(a => {
+    const dev = devices.find(d => d.id === a.deviceId);
+    return dev?.type === 'VisionSystem' && (a.operation === 'VisionInspect' || a.operation === 'Inspect') && a.outcomes?.length >= 2;
+  });
+  if (visionAction) {
+    const outcomes = visionAction.outcomes;
+    const existingEdges = (sm.edges ?? []).filter(e => e.source === sourceNodeId);
+    const usedOutcomeIds = new Set(
+      existingEdges
+        .filter(e => e.data?.conditionType === 'visionResult')
+        .map(e => e.data?.outcomeId)
+    );
+    const nextOutcome = outcomes.find(o => !usedOutcomeIds.has(o.id));
+    if (nextOutcome) {
+      const outcomeIdx = outcomes.indexOf(nextOutcome);
+      const edgeLabel = nextOutcome.label || `Branch ${outcomeIdx + 1}`;
+      return {
+        conditionType: 'visionResult',
+        outcomeId: nextOutcome.id,
+        outcomeLabel: edgeLabel,
+        outcomeIndex: outcomeIdx,
+        label: edgeLabel,
+      };
+    }
+    return { conditionType: 'ready', label: 'Ready' };
+  }
+
+  const { label, conditions } = buildVerifyLabel(sourceNode, devices);
+  if (!label) return { conditionType: 'ready', label: 'Ready' };
+  return { conditionType: 'verify', label, conditions };
+}
+
+export function Canvas() {
+  const store = useDiagramStore();
+  const sm = store.getActiveSm();
+  const reactFlowWrapper = useRef(null);
+  const { screenToFlowPosition } = useReactFlow();
+  const [selectMode, setSelectMode] = useState(false);
+
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  useEffect(() => {
+    function handleKeyDown(e) {
+      const mod = e.ctrlKey || e.metaKey;
+      // Ctrl+D: duplicate selected node
+      if (mod && e.key === 'd') {
+        e.preventDefault();
+        const { activeSmId, selectedNodeId } = useDiagramStore.getState();
+        if (activeSmId && selectedNodeId) {
+          useDiagramStore.getState().duplicateNode(activeSmId, selectedNodeId);
+        }
+      }
+      // Ctrl+Z: undo
+      if (mod && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        useDiagramStore.getState().undo();
+      }
+      // Ctrl+Y or Ctrl+Shift+Z: redo
+      if (mod && (e.key === 'y' || (e.key === 'Z' && e.shiftKey) || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        useDiagramStore.getState().redo();
+      }
+      // Delete / Backspace: delete selected node or edge
+      // Skip if focus is inside an input/textarea/contenteditable (user is typing)
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const tag = document.activeElement?.tagName;
+        const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+        if (!isEditing) {
+          const { activeSmId, selectedNodeId, selectedEdgeId } = useDiagramStore.getState();
+          if (activeSmId && selectedNodeId) {
+            useDiagramStore.getState().deleteNode(activeSmId, selectedNodeId);
+          } else if (activeSmId && selectedEdgeId) {
+            useDiagramStore.getState().deleteEdge(activeSmId, selectedEdgeId);
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // ── Capture pre-drag snapshot for undo ────────────────────────────────────
+  const onNodeDragStart = useCallback(() => {
+    useDiagramStore.getState()._pushHistory();
+  }, []);
+
+  // ── Snap-to-vertical on drag stop ──────────────────────────────────────────
+  // When a node is dropped within 25px of a connected node's X, snap it to align
+  const onNodeDragStop = useCallback((event, node) => {
+    const currentSm = useDiagramStore.getState().getActiveSm();
+    if (!currentSm) return;
+
+    const SNAP_THRESHOLD = 25; // px in flow coordinates
+
+    // Find connected nodes (parent + child via edges)
+    const connectedNodeIds = new Set();
+    for (const e of (currentSm.edges ?? [])) {
+      if (e.source === node.id) connectedNodeIds.add(e.target);
+      if (e.target === node.id) connectedNodeIds.add(e.source);
+    }
+
+    // Snap to closest connected node's X if within threshold
+    let snapX = null;
+    let minDist = SNAP_THRESHOLD;
+    for (const nId of connectedNodeIds) {
+      const connected = (currentSm.nodes ?? []).find(n => n.id === nId);
+      if (!connected) continue;
+      const dist = Math.abs(node.position.x - connected.position.x);
+      if (dist < minDist) {
+        minDist = dist;
+        snapX = connected.position.x;
+      }
+    }
+
+    if (snapX !== null && snapX !== node.position.x) {
+      useDiagramStore.getState().onNodesChange(currentSm.id, [{
+        type: 'position',
+        id: node.id,
+        position: { x: snapX, y: node.position.y },
+      }]);
+    }
+  }, []);
+
+  // ── Invert scroll-zoom so it matches other apps (scroll up = zoom in) ─────
+  useEffect(() => {
+    const el = reactFlowWrapper.current;
+    if (!el) return;
+    let isSynthetic = false;
+    function handleWheel(e) {
+      if (isSynthetic) return;           // let our synthetic event pass through
+      if (e.ctrlKey || e.metaKey) return; // don't touch pinch-zoom
+      e.stopPropagation();
+      e.preventDefault();
+      // Dispatch a new wheel event with inverted deltaY to the original target
+      isSynthetic = true;
+      e.target.dispatchEvent(new WheelEvent('wheel', {
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        deltaX: e.deltaX,
+        deltaY: -e.deltaY,
+        deltaMode: e.deltaMode,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        shiftKey: e.shiftKey,
+      }));
+      isSynthetic = false;
+    }
+    el.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => el.removeEventListener('wheel', handleWheel, { capture: true });
+  }, []);
+
+  // ── Shared helper: add a node and auto-connect from previously selected ───
+  const addNodeWithAutoConnect = useCallback((opts = {}) => {
+    if (!sm) return null;
+
+    const prevSelectedId = useDiagramStore.getState().selectedNodeId;
+    const smNodes = sm.nodes ?? [];
+
+    // Determine which node we'll connect from
+    const connectFromId =
+      prevSelectedId ??
+      (smNodes.length > 0 ? smNodes[smNodes.length - 1].id : null);
+
+    // Default position: straight below source node; branch → offset right
+    if (!opts.position && connectFromId) {
+      const sourceNode = smNodes.find(n => n.id === connectFromId);
+      if (sourceNode) {
+        const existingOutEdges = (sm.edges ?? []).filter(e => e.source === connectFromId);
+        if (existingOutEdges.length > 0) {
+          // Branch: offset to the right
+          opts = { ...opts, position: {
+            x: sourceNode.position.x + 300,
+            y: sourceNode.position.y + 200,
+          }};
+        } else {
+          // Straight below source
+          opts = { ...opts, position: {
+            x: sourceNode.position.x,
+            y: sourceNode.position.y + 200,
+          }};
+        }
+      }
+    }
+
+    const newNodeId = store.addNode(sm.id, opts);
+    if (!newNodeId) return null;
+
+    // Auto-connect from source node
+    if (connectFromId && connectFromId !== newNodeId) {
+      const edgeCond = getVerifyEdgeData(sm, connectFromId);
+      store.addEdge(
+        sm.id,
+        { source: connectFromId, sourceHandle: null, target: newNodeId, targetHandle: null },
+        edgeCond
+      );
+    }
+
+    // Signal the new node to auto-open its inline action picker
+    store.setOpenPickerOnNode(newNodeId);
+    return newNodeId;
+  }, [sm, store]);
+
+  // ── Node / Edge change handlers ────────────────────────────────────────────
+  const onNodesChange = useCallback((changes) => {
+    if (!sm) return;
+    store.onNodesChange(sm.id, changes);
+  }, [sm, store]);
+
+  const onEdgesChange = useCallback((changes) => {
+    if (!sm) return;
+    store.onEdgesChange(sm.id, changes);
+  }, [sm, store]);
+
+  // ── Connection handlers ────────────────────────────────────────────────────
+
+  /** Enter drawing mode when a connection drag begins */
+  const onConnectStart = useCallback(() => {
+    useDiagramStore.setState({ _isDrawingConnection: true, _drawingWaypoints: [] });
+  }, []);
+
+  // Build decision/vision-exit edge data when dragging from a decision/vision node's pass/fail/single handle
+  const getDecisionExitData = useCallback((sourceNodeId, sourceHandle) => {
+    if (!sm || !sourceHandle) return null;
+    const sourceNode = sm.nodes.find(n => n.id === sourceNodeId);
+    if (!sourceNode) return null;
+
+    // Only handle exit handles from decisionNode or stateNode with vision exits
+    const isDecision = sourceNode.type === 'decisionNode';
+    const isVisionExit = sourceNode.type === 'stateNode' && sourceNode.data?.visionExitMode;
+    if (!isDecision && !isVisionExit) return null;
+
+    const handle = sourceHandle;
+
+    // Single-exit: just a plain gray transition — no colors, no label, no condition
+    if (handle === 'exit-single') {
+      return { conditionType: isVisionExit ? 'visionResult' : 'ready' };
+    }
+
+    // Pass / Fail exits: colored with label
+    if (handle !== 'exit-pass' && handle !== 'exit-fail') return null;
+    const isPass = handle === 'exit-pass';
+
+    if (isVisionExit) {
+      // Vision node: use job name from VisionInspect action
+      const visionAction = (sourceNode.data?.actions ?? []).find(a => a.operation === 'VisionInspect' || a.operation === 'Inspect');
+      const jobName = visionAction?.jobName ?? '';
+      const label = isPass ? `Pass_${jobName}` : `Fail_${jobName}`;
+      return {
+        conditionType: 'visionResult',
+        label,
+        outcomeLabel: label,
+        isDecisionExit: true,
+        exitColor: isPass ? 'pass' : 'fail',
+      };
+    }
+
+    // Decision node
+    const sigName = sourceNode.data?.signalName ?? '';
+    const label = isPass ? `Pass_${sigName}` : `Fail_${sigName}`;
+    return {
+      conditionType: 'ready',
+      label,
+      outcomeLabel: label,
+      isDecisionExit: true,
+      exitColor: isPass ? 'pass' : 'fail',
+    };
+  }, [sm]);
+
+  const onConnect = useCallback((connection) => {
+    if (!sm) return;
+    // Grab any waypoints placed during the click-to-draw connection
+    const drawingWps = useDiagramStore.getState()._drawingWaypoints;
+    // Check if this is a decision exit edge — if so, use decision styling instead of verify data
+    const decExitData = getDecisionExitData(connection.source, connection.sourceHandle);
+    const edgeCond = decExitData ?? getVerifyEdgeData(sm, connection.source);
+    // Merge drawing waypoints into the edge data
+    if (drawingWps && drawingWps.length > 0) {
+      edgeCond.waypoints = drawingWps;
+    }
+    const edgeId = store.addEdge(sm.id, connection, edgeCond);
+    // Don't open transition modal for decision exit edges — they're auto-configured
+    if (!decExitData) {
+      store.setSelectedEdge(edgeId);
+      store.openTransitionModal(edgeId);
+    }
+    // Clear drawing state
+    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [] });
+  }, [sm, store, getDecisionExitData]);
+
+  /**
+   * Drag a source handle to empty canvas space → create new node + auto-connect.
+   * Also clears click-to-draw state.
+   */
+  const onConnectEnd = useCallback((event, connectionState) => {
+    // Always clear drawing state when connection ends
+    const drawingWps = useDiagramStore.getState()._drawingWaypoints;
+    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [] });
+
+    if (connectionState.toNode) return;
+    if (!sm) return;
+
+    const fromNode = connectionState.fromNode;
+    if (!fromNode) return;
+
+    const cursorFlow = screenToFlowPosition({
+      x: event.clientX ?? event.touches?.[0]?.clientX ?? 0,
+      y: event.clientY ?? event.touches?.[0]?.clientY ?? 0,
+    });
+
+    // Branch detection: if source already has outgoing edges, use cursor X (user chose offset)
+    // Otherwise align straight below source node
+    const existingOutEdges = (sm.edges ?? []).filter(e => e.source === fromNode.id);
+    const position = {
+      x: existingOutEdges.length > 0 ? cursorFlow.x : fromNode.position.x,
+      y: cursorFlow.y,
+    };
+
+    const newNodeId = store.addNode(sm.id, { position });
+    if (!newNodeId) return;
+
+    const fromHandle = connectionState.fromHandle?.id ?? null;
+    const decExitData = getDecisionExitData(fromNode.id, fromHandle);
+    const edgeCond = decExitData ?? getVerifyEdgeData(sm, fromNode.id);
+    // Include any drawing waypoints in the new edge
+    if (drawingWps && drawingWps.length > 0) {
+      edgeCond.waypoints = drawingWps;
+    }
+    store.addEdge(
+      sm.id,
+      {
+        source: fromNode.id,
+        sourceHandle: fromHandle,
+        target: newNodeId,
+        targetHandle: null,
+      },
+      edgeCond
+    );
+
+    store.setOpenPickerOnNode(newNodeId);
+  }, [sm, store, screenToFlowPosition]);
+
+  // ── Click handlers ────────────────────────────────────────────────────────
+  const onNodeClick = useCallback((event, node) => {
+    store.setSelectedNode(node.id);
+  }, [store]);
+
+  const onEdgeClick = useCallback((event, edge) => {
+    store.setSelectedEdge(edge.id);
+  }, [store]);
+
+  const onEdgeDoubleClick = useCallback((event, edge) => {
+    store.setSelectedEdge(edge.id);
+    store.openTransitionModal(edge.id);
+  }, [store]);
+
+  const onPaneClick = useCallback((event) => {
+    // If we're in drawing-connection mode (handle drag), add a waypoint instead of clearing selection
+    const isDrawing = useDiagramStore.getState()._isDrawingConnection;
+    if (isDrawing) {
+      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      useDiagramStore.setState(s => ({
+        _drawingWaypoints: [...s._drawingWaypoints, { x: flowPos.x, y: flowPos.y }],
+      }));
+      return; // Don't clear selection while drawing
+    }
+    store.clearSelection();
+    useDiagramStore.setState(s => ({ _closePickerSignal: s._closePickerSignal + 1 }));
+  }, [store, screenToFlowPosition]);
+
+  // ── Drag-from-sidebar drop ────────────────────────────────────────────────
+  const onDragOver = useCallback((event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback((event) => {
+    event.preventDefault();
+    if (!sm) return;
+
+    const label = event.dataTransfer.getData('application/state-node-label');
+    if (!label && event.dataTransfer.getData('application/state-node') !== 'true') return;
+
+    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    addNodeWithAutoConnect({ position, ...(label ? { label } : {}) });
+  }, [sm, addNodeWithAutoConnect, screenToFlowPosition]);
+
+  // Compute state numbers and inject into node data
+  // (hooks must always run — React forbids hooks after an early return)
+  const devices = sm?.devices ?? [];
+  const smEdges = sm?.edges ?? [];
+  const smNodes = sm?.nodes ?? [];
+  const { stateMap: stateNumberMap, visionSubStepsMap } = useMemo(
+    () => sm ? computeStateNumbers(smNodes, smEdges, devices) : { stateMap: new Map(), visionSubStepsMap: new Map() },
+    [sm, smNodes, smEdges, devices]
+  );
+
+  const nodes = useMemo(() => {
+    if (!sm) return [];
+    return smNodes.map(n => {
+      // DecisionNode: inject stateNumber (same sequence as state nodes)
+      if (n.type === 'decisionNode') {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            stateNumber: stateNumberMap.get(n.id) ?? 0,
+          },
+        };
+      }
+
+      const visionSubSteps = visionSubStepsMap.get(n.id);
+      // Inject visionSubSteps into each Inspect action for rendering
+      let actions = n.data?.actions;
+      if (visionSubSteps && actions) {
+        actions = actions.map(a => {
+          const dev = devices.find(d => d.id === a.deviceId);
+          if (dev?.type === 'VisionSystem' && (a.operation === 'Inspect' || a.operation === 'VisionInspect')) {
+            return { ...a, visionSubSteps };
+          }
+          return a;
+        });
+      }
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          stateNumber: stateNumberMap.get(n.id) ?? 0,
+          ...(actions !== n.data?.actions ? { actions } : {}),
+        },
+      };
+    });
+  }, [sm, smNodes, stateNumberMap, visionSubStepsMap, devices]);
+
+  // Always use RoutableEdge; show labels only on branch edges (vision/check results).
+  // Edges sourced from OR targeting a decisionNode use 'straight' type for natural routing.
+  const edges = useMemo(() => {
+    if (!sm) return [];
+    // Build a fast lookup map for nodes by id
+    const nodesById = {};
+    for (const n of smNodes) nodesById[n.id] = n;
+
+    return smEdges.map(e => {
+      const isBranch = e.data?.conditionType === 'visionResult' || e.data?.conditionType === 'checkResult';
+      const sourceNode = nodesById[e.source];
+      const targetNode = nodesById[e.target];
+      // Ensure edges going TO a decision node always target the 'input' handle
+      let targetHandle = e.targetHandle;
+      if (targetNode?.type === 'decisionNode' && !targetHandle) {
+        targetHandle = 'input';
+      }
+
+      // Decision exit edges (pass/fail): colored label — exit-single is plain gray
+      const isDecisionExit = e.data?.isDecisionExit === true && e.sourceHandle !== 'exit-single';
+      if (isDecisionExit) {
+        const isPass = e.data?.exitColor === 'pass';
+        // Only force targetHandle='input' if targeting a decisionNode; stateNodes use default (null)
+        const decTargetHandle = targetNode?.type === 'decisionNode' ? 'input' : (e.targetHandle ?? null);
+        const color = isPass ? '#16a34a' : '#dc2626';
+        return {
+          ...e,
+          targetHandle: decTargetHandle,
+          type: 'routableEdge',
+          label: e.sourceHandle === 'exit-single' ? '' : (e.data?.outcomeLabel ?? ''),
+          labelStyle: { fill: '#fff', fontWeight: 600, fontSize: 11 },
+          labelBgStyle: { fill: color, rx: 4, ry: 4 },
+          labelBgPadding: [4, 8],
+          style: { stroke: color, strokeWidth: 2 },
+          markerEnd: { type: 'ArrowClosed', color },
+        };
+      }
+
+      // All other edges (including loop-backs TO decision nodes) use routableEdge
+      return {
+        ...e,
+        targetHandle,
+        type: 'routableEdge',
+        label: isBranch ? (e.data?.outcomeLabel ?? e.data?.label ?? '') : '',
+      };
+    });
+  }, [sm, smEdges, smNodes]);
+
+  // ── Empty state ────────────────────────────────────────────────────────────
+  if (!sm) {
+    return (
+      <div className="canvas-empty">
+        <div className="canvas-empty__content">
+          <div className="canvas-empty__icon">&#x26A1;</div>
+          <h2>No State Machine Selected</h2>
+          <p>Create a new state machine to begin building your sequence logic.</p>
+          <button className="btn btn--primary btn--lg" onClick={store.openNewSmModal}>
+            + New State Machine
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="canvas-wrapper" ref={reactFlowWrapper}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
+        connectOnClick={false}
+        connectionLineComponent={DrawingConnectionLine}
+        onNodeClick={onNodeClick}
+        onEdgeClick={onEdgeClick}
+        onEdgeDoubleClick={onEdgeDoubleClick}
+        onPaneClick={onPaneClick}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.3 }}
+        defaultEdgeOptions={{
+          type: 'routableEdge',
+          style: { stroke: '#6b7280', strokeWidth: 2 },
+          markerEnd: { type: 'ArrowClosed', color: '#6b7280' },
+        }}
+        deleteKeyCode={null}
+        selectionOnDrag={selectMode}
+        selectionMode={SelectionMode.Partial}
+        panOnDrag={selectMode ? [1, 2] : true}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#d1d5db" />
+        <Controls style={{ bottom: 16, left: 16 }} showInteractive={false} />
+        <MiniMap
+          style={{ bottom: 16, right: 16 }}
+          nodeColor={(n) => {
+            if (n.type === 'decisionNode') return n.data?.decisionType === 'vision' ? '#f59e0b' : '#0072B5';
+            return n.data?.isInitial ? '#5a9a48' : '#4a89b8';
+          }}
+          maskColor="rgba(255,255,255,0.7)"
+        />
+
+        {/* Floating buttons — add state + renumber */}
+        <div className="canvas-add-btn" title="Add State (Ctrl+D duplicates selected)">
+          <button
+            className="btn btn--circle btn--primary"
+            onClick={() => addNodeWithAutoConnect()}
+            title="Add new state step"
+          >
+            +
+          </button>
+          <button
+            className="btn btn--circle btn--ghost canvas-renumber-btn"
+            onClick={() => {
+              // Force re-render by touching nodes (state numbers recompute automatically)
+              if (sm) store.onNodesChange(sm.id, []);
+            }}
+            title="Renumber states (follows edge connections)"
+          >
+            #
+          </button>
+        </div>
+
+        {/* Bottom toolbar — Select */}
+        <div className="canvas-select-toggle">
+          <button
+            className={`btn btn--sm canvas-select-btn${selectMode ? ' canvas-select-btn--active' : ''}`}
+            onClick={() => setSelectMode(m => !m)}
+            title={selectMode ? 'Selection mode ON — drag to select nodes. Click to exit.' : 'Click to enter selection mode (drag to select multiple nodes)'}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="1" y="1" width="14" height="14" strokeDasharray="3 2" rx="1" />
+              <path d="M11 7L13 14L10.5 11.5L8 14L6 7" fill="currentColor" stroke="currentColor" strokeWidth="1" />
+            </svg>
+            <span>{selectMode ? 'Select ON' : 'Select'}</span>
+          </button>
+        </div>
+      </ReactFlow>
+    </div>
+  );
+}

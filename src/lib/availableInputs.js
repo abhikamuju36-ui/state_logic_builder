@@ -1,0 +1,117 @@
+/**
+ * Shared utility: build a flat array of all checkable inputs
+ * from every device in a state machine.
+ *
+ * Used by both the InlinePicker (Verify flow) and AddDeviceModal.
+ */
+
+/**
+ * Normalise a device's sensorArrangement string to a simple key.
+ * Returns: 'both' | 'extendOnly' | 'retractOnly' | 'engageOnly'
+ */
+export function sensorCfg(d) {
+  const arr = (d.sensorArrangement ?? '').toLowerCase();
+  if (arr.includes('2-sensor')) return 'both';
+  if (arr.includes('ret only') || arr.includes('1-sensor'))
+    return d.type === 'PneumaticGripper' ? 'engageOnly' : 'retractOnly';
+  if (arr.includes('ext only')) return 'extendOnly';
+  if (arr.includes('engaged only')) return 'engageOnly';
+  return 'both';
+}
+
+/**
+ * Build a flat array of all checkable inputs across all devices in a state machine.
+ *
+ * @param {object[]} devices     All devices in the current SM
+ * @param {object[]} allSMs      All state machines in the project
+ * @param {string}   currentSmId The current SM's id
+ * @param {object[]} [trackingFields] Part tracking fields from project.partTracking.fields
+ * @returns {{ ref: string, tag: string, label: string, inputType: 'bool'|'range', group: string }[]}
+ */
+export function buildAvailableInputs(devices, allSMs, currentSmId, trackingFields) {
+  const inputs = [];
+
+  for (const d of (devices ?? [])) {
+    // Skip auto-created verify devices — they aren't checkable inputs
+    if (d._autoVerify || d._autoVision) continue;
+
+    switch (d.type) {
+      case 'PneumaticLinearActuator':
+      case 'PneumaticRotaryActuator': {
+        const cfg = sensorCfg(d);
+        if (cfg === 'both' || cfg === 'extendOnly')
+          inputs.push({ ref: `${d.id}:ext`, tag: `i_${d.name}Ext`, label: `${d.displayName} Extended`, inputType: 'bool', group: 'Cylinders / Actuators' });
+        if (cfg === 'both' || cfg === 'retractOnly')
+          inputs.push({ ref: `${d.id}:ret`, tag: `i_${d.name}Ret`, label: `${d.displayName} Retracted`, inputType: 'bool', group: 'Cylinders / Actuators' });
+        break;
+      }
+      case 'PneumaticGripper': {
+        const cfg = sensorCfg(d);
+        if (cfg === 'both' || cfg === 'engageOnly')
+          inputs.push({ ref: `${d.id}:eng`, tag: `i_${d.name}Engage`, label: `${d.displayName} Engaged`, inputType: 'bool', group: 'Grippers' });
+        if (cfg === 'both')
+          inputs.push({ ref: `${d.id}:dis`, tag: `i_${d.name}Disengage`, label: `${d.displayName} Disengaged`, inputType: 'bool', group: 'Grippers' });
+        break;
+      }
+      case 'PneumaticVacGenerator':
+        inputs.push({ ref: `${d.id}:vac`, tag: `i_${d.name}VacOn`, label: `${d.displayName} Vacuum`, inputType: 'bool', group: 'Vacuum' });
+        break;
+      case 'DigitalSensor':
+        inputs.push({ ref: `${d.id}:sensor`, tag: `i_${d.name}`, label: d.displayName, inputType: 'bool', group: 'Sensors' });
+        break;
+      case 'AnalogSensor':
+        for (const sp of (d.setpoints ?? []))
+          inputs.push({ ref: `${d.id}:${sp.name}`, tag: `${d.name}${sp.name}RC.In_Range`, label: `${d.displayName} @ ${sp.name}`, inputType: 'range', group: 'Analog Sensors' });
+        break;
+      case 'ServoAxis':
+        for (const pos of (d.positions ?? []))
+          inputs.push({ ref: `${d.id}:${pos.name}`, tag: `${d.name}${pos.name}RC.In_Range`, label: `${d.displayName} @ ${pos.name}`, inputType: 'range', group: 'Servo Positions' });
+        break;
+      case 'Parameter': {
+        const pfx = d.dataType === 'boolean' ? 'q_' : 'p_';
+        inputs.push({ ref: `${d.id}:param`, tag: `${pfx}${d.name}`, label: d.displayName, inputType: 'bool', group: 'Parameters', paramScope: d.paramScope, crossSmId: d.crossSmId });
+        break;
+      }
+      case 'VisionSystem':
+        inputs.push({ ref: `${d.id}:trigReady`, tag: `i_${d.name}TrigRdy`, label: `${d.displayName} Trigger Ready`, inputType: 'bool', group: 'Vision' });
+        inputs.push({ ref: `${d.id}:resultReady`, tag: `i_${d.name}ResultReady`, label: `${d.displayName} Result Ready`, inputType: 'bool', group: 'Vision' });
+        inputs.push({ ref: `${d.id}:inspPass`, tag: `i_${d.name}InspPass`, label: `${d.displayName} Inspection Pass`, inputType: 'bool', group: 'Vision' });
+        break;
+    }
+  }
+
+  // Global params from other SMs
+  for (const otherSm of (allSMs ?? [])) {
+    if (otherSm.id === currentSmId) continue;
+    for (const d of (otherSm.devices ?? [])) {
+      if (d.type === 'Parameter' && d.paramScope === 'global' && !d._autoVision) {
+        const pfx = d.dataType === 'boolean' ? 'q_' : 'p_';
+        inputs.push({ ref: `${d.id}:cross:${otherSm.id}`, tag: `${pfx}${d.name}`, label: `${d.displayName} (${otherSm.name})`, inputType: 'bool', group: 'Cross-SM Parameters', paramScope: 'cross-sm', crossSmId: otherSm.id, deviceId: d.id });
+      }
+    }
+  }
+
+  // Part Tracking fields (project-level)
+  for (const field of (trackingFields ?? [])) {
+    inputs.push({
+      ref: `_tracking:${field.id}`,
+      tag: `PartTracking.${field.name}`,
+      label: `PT: ${field.name}`,
+      inputType: 'bool',
+      group: 'Part Tracking',
+    });
+  }
+
+  // Cumulative "All Pass" entry — only if there are tracking fields
+  if ((trackingFields ?? []).length > 0) {
+    inputs.push({
+      label: 'PT: All Pass',
+      ref: '_tracking:_allPass',
+      type: 'boolean',
+      inputType: 'bool',
+      group: 'Part Tracking',
+    });
+  }
+
+  return inputs;
+}

@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE folders
+.vscode/
+.idea/
+.claude/
+
+# Electron build artifacts
+out/
+*.exe
+*.dmg
+*.AppImage
+
+# Company project data files (keep off GitHub)
+App Files/
+projects/
+
+# Binary / media files
+*.pptx
+*.jpg
+*.png
+*.ico
+*.L5X

@@ -1,0 +1,4 @@
+# Cloudflare Pages: proxy all /api/* requests to the Render backend
+# Replace YOUR-APP-NAME with your actual Render app name after deployment
+# Replace sld-app-backend with your actual Render service name
+/api/* https://sld-app-backend.onrender.com/api/:splat 200
