@@ -1565,7 +1565,7 @@ export const useDiagramStore = create(
         // Re-check availability in case it started after page load
         if (!serverAvailable) {
           const available = await projectApi.isServerAvailable();
-          if (!available) throw new Error('Server not running — cannot save to N:\\10000_State_Logic_Diagram. Launch KEEP_RUNNING.bat.');
+          if (!available) throw new Error('No save server available. Use the Download button to save your project as a local file.');
           set({ serverAvailable: true });
           serverAvailable = true;
         }
@@ -1618,8 +1618,19 @@ export const useDiagramStore = create(
       /** Create a brand new project and switch to it. */
       async createNewProject(name) {
         const { currentFilename, project, serverAvailable, activeSmId } = get();
+
+        // Cloud / offline mode: create project in memory without saving to server
         if (!serverAvailable) {
-          alert('Project server is not running.\n\nMake sure you launched the app with START_APP.bat\n(it starts both the API server and the dev server).');
+          const newProject = { name: name || 'New Project', stateMachines: [], partTracking: { fields: [] }, signals: [] };
+          set({
+            project: newProject,
+            currentFilename: null,
+            activeSmId: null,
+            selectedNodeId: null,
+            selectedEdgeId: null,
+            showProjectManager: false,
+            showNewSmModal: true,
+          });
           return;
         }
 

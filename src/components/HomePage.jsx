@@ -160,12 +160,11 @@ export function HomePage({ onEnterEditor }) {
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 autoFocus
-                disabled={!serverAvailable}
               />
               <button
                 type="submit"
                 className="home-action-btn home-action-btn--primary"
-                disabled={!newName.trim() || creating || !serverAvailable}
+                disabled={!newName.trim() || creating}
               >
                 {creating ? '⏳ Creating...' : '+ New Project'}
               </button>
@@ -173,8 +172,7 @@ export function HomePage({ onEnterEditor }) {
 
             {!serverAvailable && (
               <p className="home-warning">
-                ⚠ Server not running — project creation requires the API server.
-                Reload with <strong>KEEP_RUNNING.bat</strong>.
+                ☁ Cloud mode — projects are session-only. Use the Download button in the toolbar to save your work as a .json file.
               </p>
             )}
 
@@ -216,7 +214,7 @@ export function HomePage({ onEnterEditor }) {
             <h2 className="home-panel__title">Recent Projects</h2>
 
             {!serverAvailable && (
-              <p className="home-panel__empty">Server not running — cannot list projects.</p>
+              <p className="home-panel__empty">☁ Cloud mode — open a .json file or create a new project to get started.</p>
             )}
 
             {serverAvailable && loadingProjects && (
@@ -263,7 +261,7 @@ export function HomePage({ onEnterEditor }) {
         {/* Footer */}
         <div className="home-footer">
           <span>SDC State Logic Builder · ME → L5X export tool</span>
-          <span>http://localhost:3131</span>
+          <span>state-logic-builder.pages.dev</span>
         </div>
       </div>
     </div>
