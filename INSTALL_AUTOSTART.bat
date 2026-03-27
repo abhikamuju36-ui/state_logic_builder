@@ -2,7 +2,8 @@
 :: Registers SDC State Logic Builder to start automatically at Windows login
 :: Run this ONCE as Administrator
 
-set APP_DIR=C:\State Logic Diagrams\V2\State Logic Diagrams
+set "APP_DIR=%~dp0"
+set "APP_DIR=%APP_DIR:~0,-1%"
 set TASK_NAME=SDC-StateLogic-Server
 
 echo.

@@ -212,7 +212,11 @@ export const DEVICE_TYPES = {
     tagPatterns: {
       axisTag:          'a{axisNum}_{name}',
       positionParam:    'p_{name}{positionName}',
+      positionRC:       '{name}{positionName}RC',
       mamControl:       'MAM_{name}',
+      motionParam:      'MAMParam_{name}',
+      incrementParam:   'p_{name}Incr',
+      indexAngleParam:  'p_{name}IndexAngle',
       oneShotTag:       '{name}_Step{step}_OS',
     },
     defaultTimerPreMs: 0,
@@ -295,12 +299,13 @@ export const DEVICE_TYPES = {
       { value: 'Trigger', label: 'Trigger Inspection', verb: 'Trigger', icon: '📷' },
     ],
     tagPatterns: {
-      triggerOutput:    'q_Trigger{name}',
-      trigReady:        'i_{name}TrigRdy',
+      trigger:          'q_Trigger{name}',
+      triggerReady:     'i_{name}TrigRdy',
       resultReady:      'i_{name}ResultReady',
       inspPass:         'i_{name}InspPass',
       waitTimer:        '{name}WaitTimer',
       trigDwell:        '{name}TrigDwell',
+      searchTimeout:    '{name}SearchTimeout',
       jobOutcome:       'q_Pass_{jobName}',   // per-job pass/fail params
     },
     defaultTimerPreMs: 50,

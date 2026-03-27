@@ -2,7 +2,7 @@
 title SDC State Logic Builder
 
 :: Always run from the source directory on C: drive (has correct config + node_modules)
-set APP_DIR=C:\SDC-StateLogic
+set APP_DIR=%~dp0
 
 echo.
 echo  ============================================

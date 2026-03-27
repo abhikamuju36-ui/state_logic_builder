@@ -2,7 +2,7 @@
 title SDC State Logic Builder - Server (Always On)
 color 0A
 
-set APP_DIR=C:\State Logic Diagrams\V2\State Logic Diagrams
+set APP_DIR=%~dp0
 set PORT=3131
 
 echo.
