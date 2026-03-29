@@ -107,10 +107,24 @@ function resolveInputRefTag(inputRef, devices, allSMs = [], trackingFields = [])
 
 const SCHEMA_REV = '1.0';
 const SOFTWARE_REV = '37.00';
-const STEP_BASE = 1;          // Wait/Home state = 1
-const STEP_INCREMENT = 3;     // First action = 4, then 7, 10, 13, …
+const STEP_BASE = 10;         // Wait/Home state = 10 (SDC standard: steps start at 10, 13, 16, …)
+const STEP_INCREMENT = 3;     // First action = 13, then 16, 19, …
 const DEFAULT_FAULT_TIME = 5000;
 const CONTROLLER_NAME = 'SDCController';
+
+// ── Date helper (Studio 5000 expects C ctime format: "Mon Dec 15 15:57:26 2025") ──────────
+
+function toCTimeString(date) {
+  const DAYS   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const pad2 = n => String(n).padStart(2, '0');
+  // ctime pads single-digit day with a space: " 5" vs "15"
+  const day = String(date.getDate()).padStart(2, ' ');
+  return `${DAYS[date.getDay()]} ${MONTHS[date.getMonth()]} ${day} ` +
+         `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())} ` +
+         `${date.getFullYear()}`;
+}
 
 // ── XML helpers ──────────────────────────────────────────────────────────────
 
@@ -168,7 +182,7 @@ function orderNodes(nodes, edges) {
 
 function buildStepMap(orderedNodes, devices) {
   const map = {};
-  let currentStep = STEP_BASE; // starts at 1 (wait state)
+  let currentStep = STEP_BASE; // starts at 10 (wait state)
 
   orderedNodes.forEach((n) => {
     currentStep += STEP_INCREMENT;
@@ -200,7 +214,7 @@ function getVisionSubSteps(node, devices, stepMap) {
 }
 
 function getWaitStep() {
-  return STEP_BASE; // always 1
+  return STEP_BASE; // always 10
 }
 
 function getCompleteStep(orderedNodes, devices) {
@@ -575,9 +589,9 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
   addTag(buildStateEngineTagXml(), 'StateEngine');
   addTag(buildStateHistoryTagXml(), 'StateHistory');
 
-  // q_Ready output
+  // q_Ready — Public so other programs can reference \ProgramName.q_Ready
   addTag(
-    buildBoolTagXml('q_Ready', 'Station Ready', 'Output', 'Read Only'),
+    buildBoolTagXml('q_Ready', 'Station Ready', 'Public', 'Read Only'),
     'q_Ready'
   );
 
@@ -1443,8 +1457,9 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
         const visionDevice = visionAction ? devices.find(d => d.id === visionAction.deviceId) : null;
 
         if (visionDevice) {
-          const trigReadyTag = DEVICE_TYPES.VisionSystem.tagPatterns.triggerReady.replace(/\{name\}/g, visionDevice.name);
-          const trigDwellTag = DEVICE_TYPES.VisionSystem.tagPatterns.trigDwell.replace(/\{name\}/g, visionDevice.name);
+          const trigReadyTag  = DEVICE_TYPES.VisionSystem.tagPatterns.triggerReady.replace(/\{name\}/g, visionDevice.name);
+          const waitTimerTag  = DEVICE_TYPES.VisionSystem.tagPatterns.waitTimer.replace(/\{name\}/g, visionDevice.name);
+          const trigDwellTag  = DEVICE_TYPES.VisionSystem.tagPatterns.trigDwell.replace(/\{name\}/g, visionDevice.name);
           const resultReadyTag = DEVICE_TYPES.VisionSystem.tagPatterns.resultReady.replace(/\{name\}/g, visionDevice.name);
 
           // Sub-state [0]→[1]: Verify Trigger Ready → Wait Timer
@@ -1457,20 +1472,22 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
           );
 
           // Sub-state [1]→[2]: Wait Timer → Trigger
+          // waitTimerTag runs while in state [1] (before trigger fires)
           rungs.push(
             buildRung(
               rungNum++,
               `State ${visionSubs[2]}: ${visionDevice.displayName} - Trigger`,
-              `XIC(Status.State[${visionSubs[1]}])TON(${trigDwellTag},?,?)XIC(${trigDwellTag}.DN)MOVE(${visionSubs[2]},Control.StateReg);`
+              `XIC(Status.State[${visionSubs[1]}])TON(${waitTimerTag},?,?)XIC(${waitTimerTag}.DN)MOVE(${visionSubs[2]},Control.StateReg);`
             )
           );
 
-          // Sub-state [2]→[3]: Trigger → Check Results (wait for ResultReady)
+          // Sub-state [2]→[3]: Trigger → Check Results
+          // trigDwellTag ensures trigger is held for minimum dwell time AND result is ready
           rungs.push(
             buildRung(
               rungNum++,
               `State ${visionSubs[3]}: ${visionDevice.displayName} - Check Results`,
-              `XIC(Status.State[${visionSubs[2]}])XIC(${resultReadyTag})MOVE(${visionSubs[3]},Control.StateReg);`
+              `XIC(Status.State[${visionSubs[2]}])TON(${trigDwellTag},?,?)XIC(${trigDwellTag}.DN)XIC(${resultReadyTag})MOVE(${visionSubs[3]},Control.StateReg);`
             )
           );
 
@@ -2493,6 +2510,95 @@ ${stContent}
 </AddOnInstructionDefinitions>`;
 }
 
+// ── Cross-SM context program blocks ──────────────────────────────────────────
+//
+// When rungs reference tags from other programs (e.g. \S02_Foo.q_Ready),
+// Studio 5000 requires a <Program Use="Context"> declaration inside the L5X
+// so it can resolve those cross-program references on import.
+//
+// Collects all cross-SM tag references in the SM's devices and CheckResults
+// outcomes, then emits one context block per referenced program.
+
+function generateCrossSmContextPrograms(sm, allSMs) {
+  // Map: progName → Set<tagName>
+  const refs = {};
+
+  function addRef(progName, tagName) {
+    if (!refs[progName]) refs[progName] = new Set();
+    refs[progName].add(tagName);
+  }
+
+  for (const device of sm.devices ?? []) {
+    // Parameter devices with cross-SM scope
+    if (device.type === 'Parameter' && device.paramScope === 'cross-sm' && device.crossSmId) {
+      const crossSm = allSMs.find(s => s.id === device.crossSmId);
+      if (!crossSm) continue;
+      const progName = buildProgramName(crossSm.stationNumber ?? 1, crossSm.name ?? 'Unknown');
+      const pfx = device.dataType === 'boolean' ? 'q_' : 'p_';
+      addRef(progName, `${pfx}${device.name}`);
+    }
+
+    // CheckResults outcomes — legacy paramDeviceId format
+    if (device.type === 'CheckResults') {
+      for (const outcome of device.outcomes ?? []) {
+        if (outcome.paramScope === 'cross-sm' && outcome.crossSmId && outcome.paramDeviceId) {
+          const crossSm = allSMs.find(s => s.id === outcome.crossSmId);
+          if (!crossSm) continue;
+          const crossDev = (crossSm.devices ?? []).find(d => d.id === outcome.paramDeviceId);
+          if (!crossDev) continue;
+          const progName = buildProgramName(crossSm.stationNumber ?? 1, crossSm.name ?? 'Unknown');
+          const pfx = crossDev.dataType === 'boolean' ? 'q_' : 'p_';
+          addRef(progName, `${pfx}${crossDev.name}`);
+        }
+
+        // New unified inputRef format: "deviceId:cross:smId"
+        if (outcome.inputRef) {
+          const parts = outcome.inputRef.split(':');
+          if (parts.length === 3 && parts[1] === 'cross') {
+            const crossSmId = parts[2];
+            const crossSm = allSMs.find(s => s.id === crossSmId);
+            if (!crossSm) continue;
+            const crossDev = (crossSm.devices ?? []).find(d => d.id === parts[0]);
+            if (!crossDev) continue;
+            const progName = buildProgramName(crossSm.stationNumber ?? 1, crossSm.name ?? 'Unknown');
+            const pfx = crossDev.dataType === 'boolean' ? 'q_' : 'p_';
+            addRef(progName, `${pfx}${crossDev.name}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Also scan transition conditions stored on edges (inputRef with :cross: pattern)
+  for (const edge of sm.edges ?? []) {
+    const inputRef = edge.data?.inputRef ?? edge.data?.condition?.inputRef;
+    if (!inputRef) continue;
+    const parts = inputRef.split(':');
+    if (parts.length === 3 && parts[1] === 'cross') {
+      const crossSm = allSMs.find(s => s.id === parts[2]);
+      if (!crossSm) continue;
+      const crossDev = (crossSm.devices ?? []).find(d => d.id === parts[0]);
+      if (!crossDev) continue;
+      const progName = buildProgramName(crossSm.stationNumber ?? 1, crossSm.name ?? 'Unknown');
+      const pfx = crossDev.dataType === 'boolean' ? 'q_' : 'p_';
+      addRef(progName, `${pfx}${crossDev.name}`);
+    }
+  }
+
+  if (Object.keys(refs).length === 0) return '';
+
+  return Object.entries(refs).map(([progName, tags]) => {
+    const tagRefs = Array.from(tags)
+      .map(t => `\n<Tag Use="Reference" Name="${escapeXml(t)}">\n</Tag>`)
+      .join('');
+    return `
+<Program Use="Context" Name="${escapeXml(progName)}" Class="Standard">
+<Tags Use="Context">${tagRefs}
+</Tags>
+</Program>`;
+  }).join('');
+}
+
 // ── Main export function ─────────────────────────────────────────────────────
 
 export function exportToL5X(sm, allSMs = [], trackingFields = []) {
@@ -2515,7 +2621,10 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
   const dataTypes = generateDataTypes(hasServos, trackingFields);
   const aoi = generateAOI(needsRangeCheck);
 
-  const now = new Date().toUTCString();
+  // Context program blocks for cross-SM tag references
+  const contextPrograms = generateCrossSmContextPrograms(sm, allSMs);
+
+  const now = toCTimeString(new Date());
   const stationDesc = `S${String(sm.stationNumber ?? 0).padStart(2, '0')} ${sm.description ?? sm.name ?? ''}`;
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -2524,7 +2633,7 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
 ${dataTypes}
 ${aoi}
 <Programs Use="Context">
-<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="R00_Main" Disabled="false" Class="Standard" UseAsFolder="false">
+${contextPrograms}<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="R00_Main" Disabled="false" Class="Standard" UseAsFolder="false">
 <Description>
 ${cdata(`${stationDesc} - Auto-generated by SDC State Logic Builder`)}
 </Description>
