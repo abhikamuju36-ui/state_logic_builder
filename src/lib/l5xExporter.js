@@ -21,6 +21,7 @@ import {
   getParameterTag,
   buildProgramName,
   getDeviceTags,
+  getAxisTag,
 } from './tagNaming.js';
 import { DEVICE_TYPES, getSensorConfigKey } from './deviceTypes.js';
 
@@ -830,7 +831,7 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
 
       case 'ServoAxis': {
         const sp = DEVICE_TYPES.ServoAxis.tagPatterns;
-        const axisTag = sp.axisTag.replace(/\{name\}/g, device.name);
+        const axisTag = getAxisTag(device);
         const mamTag = sp.mamControl.replace(/\{name\}/g, device.name);
         const motionParamTag = sp.motionParam.replace(/\{name\}/g, device.name);
 
@@ -1876,7 +1877,7 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
     for (const [, entry] of Object.entries(servoMoveMap)) {
       const { device, moves } = entry;
       const sp = DEVICE_TYPES.ServoAxis.tagPatterns;
-      const axisTag = sp.axisTag.replace(/\{name\}/g, device.name);
+      const axisTag = getAxisTag(device);
       const mamTag = sp.mamControl.replace(/\{name\}/g, device.name);
       const motionParamTag = sp.motionParam.replace(/\{name\}/g, device.name);
 
