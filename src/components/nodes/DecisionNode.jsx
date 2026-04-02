@@ -714,7 +714,12 @@ export function DecisionNode({ data, selected, id }) {
       const timer = setTimeout(() => {
         if (nodeRef.current) {
           const rect = nodeRef.current.getBoundingClientRect();
-          setPopupPos({ position: 'fixed', top: rect.top, left: rect.right + 8, zIndex: 9999 });
+          const POPUP_W = 260, POPUP_H = 420;
+          const left = (rect.right + 8 + POPUP_W > window.innerWidth)
+            ? Math.max(4, rect.left - POPUP_W - 8)
+            : rect.right + 8;
+          const top = Math.min(rect.top, Math.max(0, window.innerHeight - POPUP_H));
+          setPopupPos({ position: 'fixed', top, left, zIndex: 9999 });
         }
         setShowPopup(true);
         // Clear the flag so it doesn't re-open
@@ -785,12 +790,12 @@ export function DecisionNode({ data, selected, id }) {
     }
     if (nodeRef.current) {
       const rect = nodeRef.current.getBoundingClientRect();
-      setPopupPos({
-        position: 'fixed',
-        top: rect.top,
-        left: rect.right + 8,
-        zIndex: 9999,
-      });
+      const POPUP_W = 260, POPUP_H = 420;
+      const left = (rect.right + 8 + POPUP_W > window.innerWidth)
+        ? Math.max(4, rect.left - POPUP_W - 8)
+        : rect.right + 8;
+      const top = Math.min(rect.top, Math.max(0, window.innerHeight - POPUP_H));
+      setPopupPos({ position: 'fixed', top, left, zIndex: 9999 });
     }
     setShowPopup(true);
   }

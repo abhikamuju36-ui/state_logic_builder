@@ -2105,6 +2105,7 @@ export function StateNode({ data, selected, id }) {
     <div
       className={`state-node state-node--${shape}${selected ? ' state-node--selected' : ''}${isInitial ? ' state-node--initial' : ''}${isComplete ? ' state-node--complete' : ''}${isFault ? ' state-node--fault' : ''}`}
       style={{ '--node-border': borderColor }}
+      onClick={() => { store.setSelectedNode(id); }}
       onContextMenu={handleContextMenu}
     >
       <Handle

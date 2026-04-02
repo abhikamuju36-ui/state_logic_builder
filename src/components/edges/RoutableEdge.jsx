@@ -193,8 +193,9 @@ export function RoutableEdge({
     const isBackwardEdge = targetY < sourceY - 30;
     routeWps = storedWaypoints.map((wp, i) => {
       if (isDecExit && !isBackwardEdge && data?.exitColor !== 'retry') {
-        // Side-exit decision: keep corner tracking
-        if (i === 0) return { ...wp, y: sourceY };
+        // Side-exit decision: corner always at (targetX, sourceY) so moving
+        // the decision node only lengthens/shortens the horizontal segment.
+        if (i === 0) return { x: targetX, y: sourceY };
         return wp;
       }
       // Standard: first wp tracks sourceX, last tracks targetX
@@ -326,14 +327,26 @@ export function RoutableEdge({
         const pillW     = Math.max(80, labelText.length * charW + 20);
         const textColor = isRetry ? '#000' : 'white';
 
-        // Find the longest segment for label placement
+        // Find the best segment for label placement.
+        // For decision exits prefer the vertical segment (the "drop" to the target)
+        // so the label never jumps when the horizontal length changes.
+        // Fall back to longest segment when no vertical segment exists.
+        const isDecExit = data?.isDecisionExit === true;
+        const isBackwardLbl = targetY < sourceY - 30;
         let bestSeg = segments[0];
         let bestLen = 0;
-        for (const seg of segments) {
-          const len = seg.isH
-            ? Math.abs(seg.b.x - seg.a.x)
-            : Math.abs(seg.b.y - seg.a.y);
-          if (len > bestLen) { bestLen = len; bestSeg = seg; }
+        if (isDecExit && !isBackwardLbl) {
+          // Prefer last vertical segment (the drop to target)
+          for (let si = segments.length - 1; si >= 0; si--) {
+            if (!segments[si].isH) { bestSeg = segments[si]; break; }
+          }
+        } else {
+          for (const seg of segments) {
+            const len = seg.isH
+              ? Math.abs(seg.b.x - seg.a.x)
+              : Math.abs(seg.b.y - seg.a.y);
+            if (len > bestLen) { bestLen = len; bestSeg = seg; }
+          }
         }
 
         if (bestSeg.isH) {
