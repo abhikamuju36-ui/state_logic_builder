@@ -42,7 +42,10 @@ function parseGripperConfig(arr) {
 
 // ── Speed Profile Row Component ───────────────────────────────────────────────
 
-function SpeedProfileRow({ profile, index, onChange, onRemove }) {
+function SpeedProfileRow({ profile, index, onChange, onRemove, motionType }) {
+  const isRotary = motionType === 'rotary';
+  const speedUnit = isRotary ? 'deg / sec' : 'mm / sec';
+  const accelUnit = isRotary ? 'deg / sec²' : 'mm / sec²';
   return (
     <div className="servo-profile-card">
       <div className="servo-profile-card__header">
@@ -65,21 +68,21 @@ function SpeedProfileRow({ profile, index, onChange, onRemove }) {
           <input className="form-input servo-field-input" type="number" min="0"
             value={profile.speed ?? 100}
             onChange={e => onChange(index, 'speed', parseFloat(e.target.value) || 0)} />
-          <span className="servo-field-unit">mm / sec</span>
+          <span className="servo-field-unit">{speedUnit}</span>
         </div>
         <div className="servo-field-row">
           <span className="servo-field-label">Accel</span>
           <input className="form-input servo-field-input" type="number" min="0"
             value={profile.accel ?? 5000}
             onChange={e => onChange(index, 'accel', parseFloat(e.target.value) || 0)} />
-          <span className="servo-field-unit">mm / sec²</span>
+          <span className="servo-field-unit">{accelUnit}</span>
         </div>
         <div className="servo-field-row">
           <span className="servo-field-label">Decel</span>
           <input className="form-input servo-field-input" type="number" min="0"
             value={profile.decel ?? 5000}
             onChange={e => onChange(index, 'decel', parseFloat(e.target.value) || 0)} />
-          <span className="servo-field-unit">mm / sec²</span>
+          <span className="servo-field-unit">{accelUnit}</span>
         </div>
       </div>
     </div>
@@ -166,20 +169,26 @@ function VisionJobRow({ job, index, onChange, onRemove }) {
 
 // ── Position Row Component ────────────────────────────────────────────────────
 
-const MOVE_TYPE_META = {
+const MOVE_TYPE_META_LINEAR = {
   Pos:  { label: 'Absolute', color: '#0072B5', unit: 'mm', valueLabel: 'Position' },
   Incr: { label: 'Incremental', color: '#059669', unit: 'mm', valueLabel: 'Distance' },
   Idx:  { label: 'Index', color: '#d97706', unit: '°', valueLabel: 'Angle' },
 };
+const MOVE_TYPE_META_ROTARY_DEG = {
+  Pos:  { label: 'Absolute', color: '#0072B5', unit: 'deg', valueLabel: 'Position' },
+  Incr: { label: 'Incremental', color: '#059669', unit: 'deg', valueLabel: 'Distance' },
+  Idx:  { label: 'Index', color: '#d97706', unit: '°', valueLabel: 'Angle' },
+};
 
-function PositionCard({ pos, index, onChange, onRemove }) {
+function PositionCard({ pos, index, onChange, onRemove, motionType }) {
   const mt = pos.moveType ?? 'Pos';
-  const meta = MOVE_TYPE_META[mt];
+  const lookup = motionType === 'rotary' ? MOVE_TYPE_META_ROTARY_DEG : MOVE_TYPE_META_LINEAR;
+  const meta = lookup[mt];
   return (
     <div className="pos-card" style={{ '--pos-card-color': meta.color }}>
       <div className="pos-card__header">
         <div className="pos-card__tabs">
-          {Object.entries(MOVE_TYPE_META).map(([key, m]) => (
+          {Object.entries(lookup).map(([key, m]) => (
             <button key={key} type="button"
               className={`pos-card__tab${mt === key ? ' pos-card__tab--active' : ''}`}
               style={mt === key ? { background: m.color, color: '#fff', borderColor: m.color } : {}}
@@ -248,6 +257,7 @@ export function AddDeviceModal() {
     existingDevice?.sensorArrangement ?? DEVICE_TYPES['PneumaticLinearActuator'].defaultSensorArrangement
   );
   const [axisNumber, setAxisNumber] = useState(existingDevice?.axisNumber ?? 1);
+  const [motionType, setMotionType] = useState(existingDevice?.motionType ?? 'linear'); // 'linear' | 'rotary'
   const [positions, setPositions] = useState(
     (existingDevice?.positions ?? []).map(p => ({
       ...p,
@@ -294,6 +304,88 @@ export function AddDeviceModal() {
   const [trigDwellMs, setTrigDwellMs] = useState(existingDevice?.trigDwellMs ?? 100);
   const [jobs, setJobs] = useState(existingDevice?.jobs ?? []);
 
+  // Robot-specific: configurable signals
+  // Robot signals organized by group: DI (PLC→Robot), DO (Robot→PLC), DCS (safety zones)
+  const DEFAULT_ROBOT_SIGNALS = [
+    // DI — Digital Inputs to Robot (PLC writes these)
+    { id: 'di_start',    name: 'Start',       group: 'DI', direction: 'output', dataType: 'BOOL', description: 'Start command' },
+    { id: 'di_home',     name: 'GoHome',      group: 'DI', direction: 'output', dataType: 'BOOL', description: 'Send robot home' },
+    { id: 'di_prgBit0',  name: 'PrgBit0',     group: 'DI', direction: 'output', dataType: 'BOOL', description: 'Program select bit 0' },
+    { id: 'di_prgBit1',  name: 'PrgBit1',     group: 'DI', direction: 'output', dataType: 'BOOL', description: 'Program select bit 1' },
+    { id: 'di_prgBit2',  name: 'PrgBit2',     group: 'DI', direction: 'output', dataType: 'BOOL', description: 'Program select bit 2' },
+    // DO — Digital Outputs from Robot (PLC reads these)
+    { id: 'do_running',  name: 'Running',     group: 'DO', direction: 'input',  dataType: 'BOOL', description: 'Robot running' },
+    { id: 'do_complete', name: 'PrgComplete', group: 'DO', direction: 'input',  dataType: 'BOOL', description: 'Program complete' },
+    { id: 'do_atHome',   name: 'AtHome',      group: 'DO', direction: 'input',  dataType: 'BOOL', description: 'Robot at home' },
+    { id: 'do_fault',    name: 'Fault',       group: 'DO', direction: 'input',  dataType: 'BOOL', description: 'Robot fault' },
+    { id: 'do_ready',    name: 'Ready',       group: 'DO', direction: 'input',  dataType: 'BOOL', description: 'Robot ready' },
+    // DCS — Safety zone feedback (PLC reads these)
+    { id: 'dcs_zone1',   name: 'ClearToEnter', group: 'DCS', direction: 'input', dataType: 'BOOL', description: 'Safe to enter zone' },
+  ];
+  const [robotSignals, setRobotSignals] = useState(
+    existingDevice?.signals ?? DEFAULT_ROBOT_SIGNALS
+  );
+
+  function addRobotSignal(group = 'DO') {
+    setRobotSignals(prev => [...prev, {
+      id: `sig_${Date.now()}`,
+      name: '',
+      group,
+      direction: group === 'DI' ? 'output' : 'input',
+      dataType: 'BOOL',
+      description: '',
+    }]);
+  }
+
+  function updateRobotSignal(index, field, value) {
+    setRobotSignals(prev => prev.map((s, i) => {
+      if (i !== index) return s;
+      const updated = { ...s, [field]: value };
+      // Auto-set direction when group changes
+      if (field === 'group') {
+        updated.direction = value === 'DI' ? 'output' : 'input';
+      }
+      return updated;
+    }));
+  }
+
+  function removeRobotSignal(index) {
+    setRobotSignals(prev => prev.filter((_, i) => i !== index));
+  }
+
+  // Analog sensor-specific: setpoints with range
+  const isAnalog = type === 'AnalogSensor';
+  const [sensorUnit, setSensorUnit] = useState(existingDevice?.sensorUnit ?? 'mm');
+  const [setpoints, setSetpoints] = useState(existingDevice?.setpoints ?? []);
+
+  function addSetpoint() {
+    setSetpoints(prev => [...prev, { name: `Check${prev.length + 1}`, nominal: 0, tolerance: 0.5, lowLimit: -0.5, highLimit: 0.5 }]);
+  }
+
+  function updateSetpoint(index, field, value) {
+    setSetpoints(prev => prev.map((sp, i) => {
+      if (i !== index) return sp;
+      const updated = { ...sp, [field]: value };
+      // Auto-calc limits from nominal + tolerance
+      if (field === 'nominal' || field === 'tolerance') {
+        const nom = field === 'nominal' ? parseFloat(value) || 0 : parseFloat(updated.nominal) || 0;
+        const tol = field === 'tolerance' ? parseFloat(value) || 0 : parseFloat(updated.tolerance) || 0;
+        updated.lowLimit = nom - tol;
+        updated.highLimit = nom + tol;
+      }
+      return updated;
+    }));
+  }
+
+  function removeSetpoint(index) {
+    setSetpoints(prev => prev.filter((_, i) => i !== index));
+  }
+
+  // Conveyor-specific state
+  const [driveType, setDriveType] = useState(existingDevice?.driveType ?? 'VFD');
+  const [bidirectional, setBidirectional] = useState(existingDevice?.bidirectional ?? false);
+  const [hasSpeedControl, setHasSpeedControl] = useState(existingDevice?.hasSpeedControl ?? true);
+
   // Sensor checkboxes — derived from sensorArrangement
   const isPneumatic = ['PneumaticLinearActuator', 'PneumaticRotaryActuator'].includes(type);
   const isGripper = type === 'PneumaticGripper';
@@ -302,6 +394,8 @@ export function AddDeviceModal() {
   const isTimer = type === 'Timer';
   const isParameter = type === 'Parameter';
   const isVision = type === 'VisionSystem';
+  const isRobot = type === 'Robot';
+  const isConveyor = type === 'Conveyor';
 
   const linearParsed = parseLinearConfig(sensorArrangement);
   const gripperParsed = parseGripperConfig(sensorArrangement);
@@ -390,20 +484,10 @@ export function AddDeviceModal() {
     else store.closeAddDeviceModal();
   }
 
-  // Check for duplicate device name within the SM
-  const duplicateNameError = (() => {
-    if (!name.trim() || !sm) return null;
-    const conflict = (sm.devices ?? []).find(d =>
-      d.name.toLowerCase() === name.trim().toLowerCase() && d.id !== editId
-    );
-    return conflict ? `PLC tag stem "${name.trim()}" already exists in this state machine (${conflict.displayName || conflict.name}).` : null;
-  })();
-
   function handleSubmit(e) {
     e.preventDefault();
     if (!displayName.trim() || !name.trim()) return;
     if (!sm) return;
-    if (duplicateNameError) return;
 
     const deviceData = {
       type,
@@ -412,6 +496,7 @@ export function AddDeviceModal() {
       sensorArrangement,
       homePosition: DEVICE_TYPES[type]?.homePositions ? homePosition : undefined,
       axisNumber: Number(axisNumber) || 1,
+      motionType: type === 'ServoAxis' ? motionType : undefined,
       positions: type === 'ServoAxis' ? positions.map(p => ({
         ...p,
         type: p.moveType === 'Incr' ? 'incremental' : p.moveType === 'Idx' ? 'index' : 'position',
@@ -434,6 +519,15 @@ export function AddDeviceModal() {
       paramType:  isParameter ? paramType : undefined,
       conditions: isParameter && paramType === 'conditional' ? conditions : undefined,
       crossSmId:  undefined,
+      // Analog sensor-specific
+      sensorUnit: isAnalog ? sensorUnit : undefined,
+      setpoints: isAnalog ? setpoints : undefined,
+      // Robot-specific
+      signals: isRobot ? robotSignals.filter(s => s.name.trim()) : undefined,
+      // Conveyor-specific
+      driveType: isConveyor ? driveType : undefined,
+      bidirectional: isConveyor ? bidirectional : undefined,
+      hasSpeedControl: isConveyor ? hasSpeedControl : undefined,
     };
 
     if (isEdit && editId) {
@@ -449,7 +543,7 @@ export function AddDeviceModal() {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) handleClose(); }}>
-      <div className="modal" style={{ width: isServo ? 720 : 520, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="modal" style={{ width: isServo ? 720 : isRobot ? 620 : 520, maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="modal__header">
           <span>{isEdit ? 'Edit Subject' : 'Add Subject'}</span>
           <button className="icon-btn" onClick={handleClose}>✕</button>
@@ -508,13 +602,8 @@ export function AddDeviceModal() {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. PostCutterCylinder"
-            style={duplicateNameError ? { borderColor: '#dc2626' } : undefined}
           />
-          {duplicateNameError ? (
-            <div className="form-hint" style={{ color: '#dc2626' }}>⚠ {duplicateNameError}</div>
-          ) : (
-            <div className="form-hint">PascalCase, no spaces — used in all generated tag names</div>
-          )}
+          <div className="form-hint">PascalCase, no spaces — used in all generated tag names</div>
 
           {/* Home Position selector — shown for devices with home positions */}
           {DEVICE_TYPES[type]?.homePositions && (
@@ -704,6 +793,181 @@ export function AddDeviceModal() {
 
               <div className="form-hint" style={{ marginTop: 4, fontSize: 11, color: '#6b7280' }}>
                 Sequence: Verify Trig Ready → Wait ({waitTimerMs}ms) → Trigger → Check Results → Branch
+              </div>
+            </>
+          )}
+
+          {/* Analog Sensor: setpoints with range */}
+          {isAnalog && (
+            <>
+              <label className="form-label" style={{ marginTop: 8 }}>Sensor Unit</label>
+              <div className="btn-group" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {['mm', 'in', 'psi', 'bar', 'N', 'lbs', 'V', 'mA', '°C', '°F', 'custom'].map(u => (
+                  <button key={u} type="button"
+                    className={`btn btn--xs ${sensorUnit === u ? 'btn--primary' : 'btn--secondary'}`}
+                    onClick={() => setSensorUnit(u)}
+                  >{u}</button>
+                ))}
+              </div>
+
+              <div className="props-actions-header" style={{ marginTop: 12 }}>
+                <span className="form-label" style={{ marginBottom: 0 }}>Setpoints / Range Checks</span>
+                <button type="button" className="btn btn--xs btn--primary" onClick={addSetpoint}>
+                  + Add Setpoint
+                </button>
+              </div>
+              <div className="form-hint">Each setpoint defines a range check — nominal value ± tolerance. Available as conditions in decision/wait nodes.</div>
+
+              {setpoints.length === 0 && (
+                <div className="props-empty">No setpoints yet. Click + Add Setpoint.</div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                {setpoints.map((sp, i) => (
+                  <div key={i} style={{
+                    background: '#f8fafc',
+                    padding: '8px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #e2e8f0',
+                  }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                      <input
+                        className="form-input"
+                        value={sp.name}
+                        onChange={e => updateSetpoint(i, 'name', e.target.value)}
+                        placeholder="Setpoint name"
+                        style={{ fontSize: 13, fontWeight: 600 }}
+                      />
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn--sm icon-btn--danger"
+                        onClick={() => removeSetpoint(i)}
+                        title="Remove setpoint"
+                      >✕</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11 }}>Nominal ({sensorUnit})</label>
+                        <input className="form-input" type="number" step="any"
+                          value={sp.nominal}
+                          onChange={e => updateSetpoint(i, 'nominal', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label" style={{ fontSize: 11 }}>Tolerance (±{sensorUnit})</label>
+                        <input className="form-input" type="number" step="any" min="0"
+                          value={sp.tolerance}
+                          onChange={e => updateSetpoint(i, 'tolerance', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                      Range: {sp.lowLimit?.toFixed(3)} — {sp.highLimit?.toFixed(3)} {sensorUnit}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Robot: signal configuration grouped by DI/DO/DCS */}
+          {isRobot && (
+            <>
+              {[
+                { key: 'DI',  label: 'DI — Digital Inputs to Robot',    hint: 'PLC outputs → Robot. Tell the robot what to do.', color: '#2563eb' },
+                { key: 'DO',  label: 'DO — Digital Outputs from Robot',  hint: 'Robot → PLC inputs. Robot tells you its status.', color: '#16a34a' },
+                { key: 'DCS', label: 'DCS — Safety Zone Feedback',       hint: 'Position-based safety signals from robot controller.', color: '#d97706' },
+              ].map(grp => {
+                const groupSigs = robotSignals.map((s, origIdx) => ({ ...s, _idx: origIdx })).filter(s => (s.group || 'DO') === grp.key);
+                return (
+                  <div key={grp.key} style={{ marginTop: 10 }}>
+                    <div className="props-actions-header">
+                      <span style={{ fontSize: 12, fontWeight: 700, color: grp.color }}>{grp.label}</span>
+                      <button type="button" className="btn btn--xs btn--primary" onClick={() => addRobotSignal(grp.key)}>
+                        + Add
+                      </button>
+                    </div>
+                    <div className="form-hint" style={{ marginTop: 0 }}>{grp.hint}</div>
+
+                    {groupSigs.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#94a3b8', padding: '4px 0', fontStyle: 'italic' }}>No signals</div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                      {groupSigs.map(sig => (
+                        <div key={sig.id} style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 70px auto',
+                          gap: 6,
+                          alignItems: 'center',
+                          background: '#f8fafc',
+                          padding: '4px 8px',
+                          borderRadius: 5,
+                          borderLeft: `3px solid ${grp.color}`,
+                          border: '1px solid #e2e8f0',
+                          borderLeftColor: grp.color,
+                        }}>
+                          <input
+                            className="form-input"
+                            value={sig.name}
+                            onChange={e => updateRobotSignal(sig._idx, 'name', e.target.value)}
+                            placeholder="Signal name"
+                            style={{ fontSize: 13 }}
+                          />
+                          <select
+                            className="form-input"
+                            value={sig.dataType}
+                            onChange={e => updateRobotSignal(sig._idx, 'dataType', e.target.value)}
+                            style={{ fontSize: 12 }}
+                          >
+                            <option value="BOOL">BOOL</option>
+                            <option value="DINT">DINT</option>
+                            <option value="REAL">REAL</option>
+                          </select>
+                          <button
+                            type="button"
+                            className="icon-btn icon-btn--sm icon-btn--danger"
+                            onClick={() => removeRobotSignal(sig._idx)}
+                            title="Remove signal"
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* Conveyor: drive configuration */}
+          {isConveyor && (
+            <>
+              <label className="form-label" style={{ marginTop: 8 }}>Drive Type</label>
+              <div className="btn-group" style={{ display: 'flex', gap: 6 }}>
+                <button type="button"
+                  className={`btn btn--sm ${driveType === 'VFD' ? 'btn--primary' : 'btn--secondary'}`}
+                  onClick={() => { setDriveType('VFD'); setHasSpeedControl(true); }}
+                >VFD</button>
+                <button type="button"
+                  className={`btn btn--sm ${driveType === 'Starter' ? 'btn--primary' : 'btn--secondary'}`}
+                  onClick={() => { setDriveType('Starter'); setHasSpeedControl(false); }}
+                >Motor Starter</button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input type="checkbox" checked={bidirectional} onChange={e => setBidirectional(e.target.checked)} />
+                  Bidirectional
+                </label>
+                {driveType === 'VFD' && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                    <input type="checkbox" checked={hasSpeedControl} onChange={e => setHasSpeedControl(e.target.checked)} />
+                    Speed Control
+                  </label>
+                )}
+              </div>
+              <div className="form-hint">
+                {driveType === 'VFD' ? 'Variable Frequency Drive — speed + direction control' : 'Simple motor starter — run/stop only'}
               </div>
             </>
           )}
@@ -940,6 +1204,19 @@ export function AddDeviceModal() {
                     a{String(axisNumber).padStart(2,'0')}_{name || '…'} (AXIS_CIP_DRIVE)
                   </span>
                 </div>
+                <div className="servo-field-row" style={{ marginTop: 6 }}>
+                  <span className="servo-field-label">Motion Type</span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button type="button"
+                      className={`btn btn--xs ${motionType === 'linear' ? 'btn--primary' : 'btn--ghost'}`}
+                      onClick={() => setMotionType('linear')}
+                    >Linear (mm)</button>
+                    <button type="button"
+                      className={`btn btn--xs ${motionType === 'rotary' ? 'btn--primary' : 'btn--ghost'}`}
+                      onClick={() => setMotionType('rotary')}
+                    >Rotary (deg)</button>
+                  </div>
+                </div>
               </div>
 
               {/* ── RUNTIME SERVO SETTINGS ─────────────────── */}
@@ -957,6 +1234,7 @@ export function AddDeviceModal() {
                     index={i}
                     onChange={updateSpeedProfile}
                     onRemove={removeSpeedProfile}
+                    motionType={motionType}
                   />
                 ))}
               </div>
@@ -979,6 +1257,7 @@ export function AddDeviceModal() {
                     index={i}
                     onChange={updatePosition}
                     onRemove={removePosition}
+                    motionType={motionType}
                   />
                 ))}
               </div>
@@ -1049,6 +1328,42 @@ export function AddDeviceModal() {
                     ) : null)}
                   </>
                 )}
+                {isAnalog && (
+                  <>
+                    i_{name} (REAL — raw input)<br />
+                    {name}Scaled (REAL — scaled value)<br />
+                    {setpoints.filter(s => s.name?.trim()).map((sp, i) => (
+                      <span key={i}>
+                        {name}{sp.name}RC.In_Range (BOOL — {sp.lowLimit?.toFixed(2)} to {sp.highLimit?.toFixed(2)} {sensorUnit})<br />
+                      </span>
+                    ))}
+                  </>
+                )}
+                {isRobot && (
+                  <>
+                    {['DI', 'DO', 'DCS'].map(grp => {
+                      const sigs = robotSignals.filter(s => (s.group || 'DO') === grp && s.name?.trim());
+                      if (sigs.length === 0) return null;
+                      return (
+                        <span key={grp}>
+                          <strong style={{ fontSize: 10 }}>{grp}:</strong><br />
+                          {sigs.map((sig, i) => (
+                            <span key={sig.id}>
+                              {sig.direction === 'input' ? 'i' : 'q'}_{name}{sig.name} ({sig.dataType})<br />
+                            </span>
+                          ))}
+                        </span>
+                      );
+                    })}
+                  </>
+                )}
+                {isConveyor && (
+                  <>
+                    q_Run{name} (BOOL — run output)<br />
+                    {bidirectional && <>q_Fwd{name} (BOOL — direction)<br /></>}
+                    {hasSpeedControl && <>p_{name}Speed (REAL — speed setpoint)<br /></>}
+                  </>
+                )}
                 {isParameter && (
                   <>
                     <>p_{name} ({dataType === 'numeric' ? 'REAL' : 'BOOL'}{paramScope === 'global' ? ', global' : ''})</>
@@ -1063,7 +1378,7 @@ export function AddDeviceModal() {
             <button type="button" className="btn btn--secondary" onClick={handleClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn--primary" disabled={!displayName.trim() || !name.trim() || !!duplicateNameError}>
+            <button type="submit" className="btn btn--primary" disabled={!displayName.trim() || !name.trim()}>
               {isEdit ? 'Save Changes' : 'Add Subject'}
             </button>
           </div>

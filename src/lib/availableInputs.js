@@ -60,8 +60,11 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
         inputs.push({ ref: `${d.id}:sensor`, tag: `i_${d.name}`, label: d.displayName, inputType: 'bool', group: 'Sensors' });
         break;
       case 'AnalogSensor':
+        // Raw scaled value — can be used for range comparisons
+        inputs.push({ ref: `${d.id}:value`, tag: `${d.name}Scaled`, label: `${d.displayName} Value`, inputType: 'range', group: 'Analog Sensors' });
+        // Each setpoint as a bool "in range" check
         for (const sp of (d.setpoints ?? []))
-          inputs.push({ ref: `${d.id}:${sp.name}`, tag: `${d.name}${sp.name}RC.In_Range`, label: `${d.displayName} @ ${sp.name}`, inputType: 'range', group: 'Analog Sensors' });
+          inputs.push({ ref: `${d.id}:${sp.name}`, tag: `${d.name}${sp.name}RC.In_Range`, label: `${d.displayName} @ ${sp.name} (In Range)`, inputType: 'bool', group: 'Analog Sensors' });
         break;
       case 'ServoAxis':
         for (const pos of (d.positions ?? []))
@@ -77,6 +80,26 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
         inputs.push({ ref: `${d.id}:resultReady`, tag: `i_${d.name}ResultReady`, label: `${d.displayName} Result Ready`, inputType: 'bool', group: 'Vision' });
         inputs.push({ ref: `${d.id}:inspPass`, tag: `i_${d.name}InspPass`, label: `${d.displayName} Inspection Pass`, inputType: 'bool', group: 'Vision' });
         break;
+      case 'Robot':
+        for (const sig of (d.signals ?? [])) {
+          if (!sig.name?.trim()) continue;
+          // Only input signals (DO + DCS from robot to PLC) are checkable conditions
+          if (sig.direction === 'input') {
+            const tag = `i_${d.name}${sig.name}`;
+            const sigGroup = (sig.group || 'DO') === 'DCS' ? 'Robot DCS Zones' : 'Robot DO';
+            inputs.push({
+              ref: `${d.id}:${sig.id}`,
+              tag,
+              label: `${d.displayName} ${sig.name}`,
+              inputType: sig.dataType === 'BOOL' ? 'bool' : 'range',
+              group: sigGroup,
+            });
+          }
+        }
+        break;
+      case 'Conveyor':
+        inputs.push({ ref: `${d.id}:run`, tag: `q_Run${d.name}`, label: `${d.displayName} Running`, inputType: 'bool', group: 'Conveyors' });
+        break;
     }
   }
 
@@ -87,6 +110,22 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
       if (d.type === 'Parameter' && d.paramScope === 'global' && !d._autoVision) {
         const pfx = d.dataType === 'boolean' ? 'q_' : 'p_';
         inputs.push({ ref: `${d.id}:cross:${otherSm.id}`, tag: `${pfx}${d.name}`, label: `${d.displayName} (${otherSm.name})`, inputType: 'bool', group: 'Cross-SM Parameters', paramScope: 'cross-sm', crossSmId: otherSm.id, deviceId: d.id });
+      }
+      // Robot signals available cross-SM
+      if (d.type === 'Robot') {
+        for (const sig of (d.signals ?? [])) {
+          if (!sig.name?.trim() || sig.direction !== 'input') continue;
+          const sigGroup = (sig.group || 'DO') === 'DCS' ? 'Robot DCS' : 'Robot DO';
+          inputs.push({
+            ref: `${d.id}:${sig.id}:cross:${otherSm.id}`,
+            tag: `i_${d.name}${sig.name}`,
+            label: `${d.displayName} ${sig.name} (${otherSm.name})`,
+            inputType: sig.dataType === 'BOOL' ? 'bool' : 'range',
+            group: `${sigGroup} (${otherSm.name})`,
+            paramScope: 'cross-sm',
+            crossSmId: otherSm.id,
+          });
+        }
       }
     }
   }

@@ -168,6 +168,80 @@ function VisionSystemIcon({ size, color }) {
   );
 }
 
+// ── Robot (FANUC-style articulated arm) ──────────────────────────────────────
+function RobotIcon({ size, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Base */}
+      <rect x="4" y="20" width="16" height="3" rx="1" stroke={color} strokeWidth="1.5" fill="none"/>
+      {/* Base column */}
+      <rect x="10" y="16" width="4" height="4" stroke={color} strokeWidth="1.3" fill="none"/>
+      {/* Joint 1 (shoulder) */}
+      <circle cx="12" cy="16" r="2" stroke={color} strokeWidth="1.3" fill="none"/>
+      <circle cx="12" cy="16" r="0.8" fill={color}/>
+      {/* Upper arm */}
+      <line x1="12" y1="14" x2="7" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/>
+      {/* Joint 2 (elbow) */}
+      <circle cx="7" cy="8" r="1.8" stroke={color} strokeWidth="1.2" fill="none"/>
+      <circle cx="7" cy="8" r="0.7" fill={color}/>
+      {/* Forearm */}
+      <line x1="7" y1="8" x2="15" y2="4" stroke={color} strokeWidth="2" strokeLinecap="round"/>
+      {/* Joint 3 (wrist) */}
+      <circle cx="15" cy="4" r="1.5" stroke={color} strokeWidth="1.2" fill="none"/>
+      {/* End effector / gripper */}
+      <line x1="16.2" y1="3.5" x2="19" y2="2" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="16.2" y1="4.5" x2="19" y2="6" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// ── Conveyor (belt with rollers) ────────────────────────────────────────────
+function ConveyorIcon({ size, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Belt top */}
+      <line x1="5" y1="8" x2="19" y2="8" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      {/* Belt bottom */}
+      <line x1="5" y1="16" x2="19" y2="16" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      {/* Left roller */}
+      <circle cx="5" cy="12" r="4" stroke={color} strokeWidth="1.5" fill="none"/>
+      <circle cx="5" cy="12" r="1.2" fill={color}/>
+      {/* Right roller */}
+      <circle cx="19" cy="12" r="4" stroke={color} strokeWidth="1.5" fill="none"/>
+      <circle cx="19" cy="12" r="1.2" fill={color}/>
+      {/* Direction arrow on belt */}
+      <path d="M10 6 L13 6 L12 4.5 M13 6 L12 7.5" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  );
+}
+
+// ── Analog Sensor / Probe (gauge with needle) ───────────────────────────────
+function AnalogSensorIcon({ size, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Gauge body (half circle) */}
+      <path d="M3 16 A9 9 0 0 1 21 16" stroke={color} strokeWidth="1.5" fill="none"/>
+      {/* Base line */}
+      <line x1="3" y1="16" x2="21" y2="16" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      {/* Scale marks */}
+      <line x1="5"  y1="12.5" x2="6.2" y2="13.3" stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="7"  y1="9.5"  x2="8"   y2="10.5" stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="12" y1="7"    x2="12"   y2="8.2"  stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="17" y1="9.5"  x2="16"   y2="10.5" stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      <line x1="19" y1="12.5" x2="17.8" y2="13.3" stroke={color} strokeWidth="1" strokeLinecap="round"/>
+      {/* Needle */}
+      <line x1="12" y1="15.5" x2="16" y2="10" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      {/* Center pivot */}
+      <circle cx="12" cy="15.5" r="1.5" stroke={color} strokeWidth="1.2" fill="none"/>
+      <circle cx="12" cy="15.5" r="0.6" fill={color}/>
+      {/* Probe shaft below */}
+      <line x1="12" y1="17.5" x2="12" y2="22" stroke={color} strokeWidth="2" strokeLinecap="round"/>
+      {/* Probe tip */}
+      <circle cx="12" cy="22" r="1" stroke={color} strokeWidth="1" fill={color}/>
+    </svg>
+  );
+}
+
 // ── Icon registry ─────────────────────────────────────────────────────────────
 
 const ICON_COMPONENTS = {
@@ -176,8 +250,11 @@ const ICON_COMPONENTS = {
   PneumaticGripper:        GripperIcon,
   PneumaticVacGenerator:   VacuumIcon,
   ServoAxis:               ServoIcon,
+  Robot:                   RobotIcon,
+  Conveyor:                ConveyorIcon,
   Timer:                   TimerIcon,
   DigitalSensor:           SensorIcon,
+  AnalogSensor:            AnalogSensorIcon,
   Parameter:               ParameterIcon,
   VisionSystem:            VisionSystemIcon,
 };
@@ -188,8 +265,11 @@ export const DEVICE_ICON_COLORS = {
   PneumaticGripper:        '#8b5cf6',
   PneumaticVacGenerator:   '#06b6d4',
   ServoAxis:               '#f59e0b',
+  Robot:                   '#7c3aed',
+  Conveyor:                '#0891b2',
   Timer:                   '#9ca3af',
   DigitalSensor:           '#64748b',
+  AnalogSensor:            '#6366f1',
   Parameter:               '#f97316',
   VisionSystem:            '#0891b2',
 };

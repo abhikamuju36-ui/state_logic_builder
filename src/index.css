@@ -3523,3 +3523,262 @@ body {
   color: #334155;
   padding: 0 4px;
 }
+
+/* ── SM Dropdown Selector ──────────────────────────────────────── */
+.toolbar__sm-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 8px;
+}
+
+.toolbar__sm-active {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  background: #ffffff14;
+  border: 1px solid #ffffff1a;
+  color: #f1f5f9;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.toolbar__sm-active:hover { background: #ffffff22; }
+
+.toolbar__sm-station {
+  font-size: 10px;
+  font-weight: 700;
+  background: #1574C4;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  letter-spacing: .5px;
+}
+
+.toolbar__sm-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.toolbar__sm-chevron {
+  font-size: 8px;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.toolbar__sm-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: #0d5ea3;
+  border: 1px solid #0b5290;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  min-width: 240px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.toolbar__sm-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #cbd5e1;
+  transition: background .1s;
+}
+.toolbar__sm-item:hover { background: #ffffff14; }
+.toolbar__sm-item--active { background: #ffffff1a; color: #f1f5f9; font-weight: 600; }
+
+.toolbar__sm-item-station {
+  font-size: 10px;
+  font-weight: 700;
+  background: #1574C4;
+  color: #fff;
+  border-radius: 3px;
+  padding: 1px 4px;
+  letter-spacing: .5px;
+}
+
+.toolbar__sm-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar__sm-item-delete {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: opacity .15s;
+}
+.toolbar__sm-item:hover .toolbar__sm-item-delete { opacity: 1; }
+.toolbar__sm-item-delete:hover { background: #b83c3c26; color: #b83c3c; }
+
+.toolbar__sm-dropdown-actions {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid #334155;
+}
+
+.toolbar__sm-dropdown-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background .1s, color .1s;
+}
+.toolbar__sm-dropdown-btn:hover { background: #ffffff14; color: #e2e8f0; }
+
+/* ── Reorder Popup ──────────────────────────────────────── */
+.reorder-popup__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reorder-popup {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  min-width: 280px;
+  max-width: 400px;
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.reorder-popup__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #334155;
+}
+
+.reorder-popup__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.reorder-popup__close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.reorder-popup__close:hover { color: #f1f5f9; }
+
+.reorder-popup__hint {
+  padding: 6px 16px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.reorder-popup__list {
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+
+.reorder-popup__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 2px;
+  border-radius: 5px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  cursor: grab;
+  color: #e2e8f0;
+  font-size: 13px;
+  transition: background .1s, border-color .1s;
+}
+.reorder-popup__item:active { cursor: grabbing; }
+.reorder-popup__item--over { border-color: #1574C4; background: #0072B510; }
+
+.reorder-popup__grip {
+  color: #475569;
+  font-size: 14px;
+  user-select: none;
+}
+
+.reorder-popup__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Toolbar icon button (undo/redo compact) ─── */
+.toolbar__icon-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background .15s, color .15s;
+}
+.toolbar__icon-btn:hover:not(:disabled) { background: #ffffff14; color: #e2e8f0; }
+.toolbar__icon-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── Canvas SM title watermark ─────────────────────────── */
+.canvas-sm-title {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.45;
+  padding: 6px 16px;
+}
+.canvas-sm-title__number {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1574C4;
+  letter-spacing: 0.5px;
+}
+.canvas-sm-title__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.3px;
+}
