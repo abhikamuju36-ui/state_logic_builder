@@ -1,20 +1,22 @@
 /**
  * RoutableEdge.jsx — Orthogonal edge routing
  *
- * ROUTING RULES (from user spec):
- *   - Always exit the source node straight DOWN from its bottom handle.
- *   - Always enter the target node straight UP into its top handle.
- *   - When nodes are offset horizontally, ONE horizontal jog at the midpoint Y
- *     between source and target — making a clean Z/S shape.
- *   - When nodes are vertically aligned (|dx| < 10), draw a straight vertical line.
- *   - Backward edges (target above source) wrap around the outside with a U-route.
- *   - Decision exit edges from side handles: horizontal out → corner → vertical down.
+ * ROUTING RULES:
+ *   - Auto-route: computed live from source/target positions.
+ *     Forward aligned → straight vertical
+ *     Forward offset  → Z-bend at midY
+ *     Decision exit   → L-bend (horizontal out, vertical down)
+ *     Backward        → U-bend wrapping around diagram edge
  *
- * MANUAL ROUTING:
- *   Auto-route is computed live every render from live source/target positions.
- *   When the user drags a segment, waypoints are stored and `manualRoute: true` is set.
- *   Edges with `manualRoute` use stored waypoints (with anchoring) instead of auto-route.
- *   Deleting stored waypoints (or clearing manualRoute) restores auto-route.
+ * MANUAL ROUTING (click-to-draw waypoints):
+ *   Waypoints are stored as ortho-snapped corner points.
+ *   The path is: src → wp[0] → wp[1] → … → wp[n] → tgt
+ *   Each consecutive pair should already be axis-aligned (same X or same Y).
+ *   If not, we insert one auto-corner to keep things orthogonal.
+ *
+ * SEGMENT DRAG:
+ *   Dragging a segment moves the underlying waypoint(s) — no new waypoints created.
+ *   If two adjacent segments become collinear after drag, they merge (waypoint removed).
  */
 
 import { useRef, useCallback } from 'react';
@@ -24,72 +26,91 @@ import { OUTCOME_COLORS } from '../../lib/outcomeColors.js';
 
 const NODE_WIDTH = 240;
 
-// ── Orthogonal path builder ────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
-/**
- * Build visible points + segment metadata from an array of bend points.
- * Between any two consecutive points, inserts an auto-generated intermediate
- * point to make the polyline fully orthogonal (no diagonal segments).
- */
-function buildOrthogonalRoute(src, waypoints, tgt) {
-  const inp = [src, ...waypoints, tgt];
-  const vpts = [src];
-  const segIns = [];
-  const vpOrigins = [{ type: 'src' }];
-
-  for (let i = 1; i < inp.length; i++) {
-    const prev = inp[i - 1];
-    const curr = inp[i];
-    const ins = i - 1;
-    const isOnly = inp.length === 2;
-    const isLast = i === inp.length - 1;
-
-    const currOrigin = isLast
-      ? { type: 'tgt' }
-      : { type: 'wp', idx: i - 1 };
-
-    if (Math.abs(prev.x - curr.x) < 0.5 || Math.abs(prev.y - curr.y) < 0.5) {
-      // Already aligned — straight segment
-      vpts.push(curr);
-      segIns.push(ins);
-      vpOrigins.push(currOrigin);
-    } else if (isOnly) {
-      // Direct diagonal — insert Z-bend at midY
-      const midY = (prev.y + curr.y) / 2;
-      vpts.push({ x: prev.x, y: midY }); segIns.push(ins); vpOrigins.push({ type: 'auto' });
-      vpts.push({ x: curr.x, y: midY }); segIns.push(ins); vpOrigins.push({ type: 'auto' });
-      vpts.push(curr);                    segIns.push(ins); vpOrigins.push(currOrigin);
-    } else if (isLast) {
-      vpts.push({ x: curr.x, y: prev.y }); segIns.push(ins); vpOrigins.push({ type: 'auto' });
-      vpts.push(curr);                      segIns.push(ins); vpOrigins.push(currOrigin);
-    } else {
-      vpts.push({ x: prev.x, y: curr.y }); segIns.push(ins); vpOrigins.push({ type: 'auto' });
-      vpts.push(curr);                      segIns.push(ins); vpOrigins.push(currOrigin);
+/** Remove collinear waypoints (adjacent points on the same axis that can merge). */
+function cleanWaypoints(pts) {
+  if (pts.length < 2) return pts;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const prev = out[out.length - 1];
+    const curr = pts[i];
+    // Skip if same position as previous
+    if (Math.abs(prev.x - curr.x) < 1 && Math.abs(prev.y - curr.y) < 1) continue;
+    // Merge collinear: if prev, curr, and the one before prev are all on the same axis
+    if (out.length >= 2) {
+      const pp = out[out.length - 2];
+      const sameX = Math.abs(pp.x - prev.x) < 1 && Math.abs(prev.x - curr.x) < 1;
+      const sameY = Math.abs(pp.y - prev.y) < 1 && Math.abs(prev.y - curr.y) < 1;
+      if (sameX || sameY) {
+        out[out.length - 1] = curr; // Replace prev with curr (merge)
+        continue;
+      }
     }
+    out.push(curr);
   }
-
-  const segments = [];
-  for (let i = 0; i < vpts.length - 1; i++) {
-    const a = vpts[i];
-    const b = vpts[i + 1];
-    segments.push({
-      a,
-      b,
-      mid:       { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-      insertIdx: segIns[i],
-      isH:       Math.abs(a.y - b.y) < 0.5,
-      aOrigin:   vpOrigins[i],
-      bOrigin:   vpOrigins[i + 1],
-    });
-  }
-
-  return { visiblePoints: vpts, segments };
+  return out;
 }
 
 /**
- * Compute waypoints for a backward (upward) U-route.
- * Routes left or right based on where the source is relative to diagram center.
+ * Build the full point sequence from src → waypoints → tgt.
+ * Ensures all segments are orthogonal by inserting corners where needed.
  */
+function buildFullPath(src, waypoints, tgt) {
+  const raw = [src, ...waypoints, tgt];
+  const pts = [raw[0]];
+
+  for (let i = 1; i < raw.length; i++) {
+    const prev = pts[pts.length - 1];
+    const curr = raw[i];
+    const alignedX = Math.abs(prev.x - curr.x) < 1;
+    const alignedY = Math.abs(prev.y - curr.y) < 1;
+
+    if (alignedX || alignedY) {
+      // Already orthogonal
+      pts.push(curr);
+    } else {
+      // Need a corner — choose orientation based on context
+      const isLast = i === raw.length - 1;
+      if (isLast) {
+        // Going to target: go horizontal first, then vertical into target
+        pts.push({ x: curr.x, y: prev.y });
+      } else {
+        // Going to next waypoint: go vertical first, then horizontal
+        pts.push({ x: prev.x, y: curr.y });
+      }
+      pts.push(curr);
+    }
+  }
+
+  return pts;
+}
+
+/** Build segment metadata from a point array. */
+function buildSegments(pts, waypointCount) {
+  const segments = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    segments.push({
+      a,
+      b,
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      isH: Math.abs(a.y - b.y) < 1,
+      ptIdxA: i,
+      ptIdxB: i + 1,
+    });
+  }
+  return segments;
+}
+
+/** SVG "M … L … L …" from an array of {x,y} */
+function pointsToSvg(pts) {
+  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+}
+
+// ── Auto-route computation ────────────────────────────────────────────────────
+
 function computeBackwardWaypoints(src, tgt, allNodes) {
   const DROP = 40;
   const PAD  = 60;
@@ -116,17 +137,6 @@ function computeBackwardWaypoints(src, tgt, allNodes) {
   ];
 }
 
-/**
- * Compute the automatic route for an edge.
- * Returns waypoints (bend points between source and target).
- * These are NOT stored — recomputed live every render.
- *
- * Rules:
- *   Forward aligned   → [] (straight vertical)
- *   Forward offset    → Z-bend: [{src.x, midY}, {tgt.x, midY}]
- *   Decision exit fwd → L-bend: [{tgt.x, src.y}] (horizontal out, vertical down)
- *   Backward          → U-bend: 4-point wrap around side
- */
 function computeAutoRoute(src, tgt, data, allNodes) {
   const isBackward     = tgt.y < src.y - 30;
   const isSideways     = Math.abs(src.x - tgt.x) > 10;
@@ -136,13 +146,11 @@ function computeAutoRoute(src, tgt, data, allNodes) {
     return computeBackwardWaypoints(src, tgt, allNodes);
   }
 
-  if (isDecisionExit && isSideways) {
-    // Side handle → horizontal to target X → vertical down into target
+  if (isDecisionExit && data?.exitColor !== 'retry' && isSideways) {
     return [{ x: tgt.x, y: src.y }];
   }
 
   if (isSideways) {
-    // Standard forward Z-bend — one horizontal jog at midY
     const midY = (src.y + tgt.y) / 2;
     return [
       { x: src.x, y: midY },
@@ -150,12 +158,7 @@ function computeAutoRoute(src, tgt, data, allNodes) {
     ];
   }
 
-  return []; // Straight vertical line
-}
-
-/** SVG "M … L … L …" from an array of {x,y} */
-function pointsToSvg(pts) {
-  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  return [];
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -181,33 +184,34 @@ export function RoutableEdge({
   const src = { x: sourceX, y: sourceY };
   const tgt = { x: targetX, y: targetY };
 
-  // ── Determine waypoints to use ─────────────────────────────────────────────
-  // Manual route: apply anchoring to keep first/last wps tracking src/tgt X.
-  // Auto route:   compute live from current positions — always correct, never stale.
+  // ── Determine waypoints ─────────────────────────────────────────────────
   let routeWps;
   if (isManual) {
-    const isDecExit     = data?.isDecisionExit === true;
+    // For manual routes: anchor first wp to sourceX, last wp to targetX
+    // (so edges track when nodes are moved)
+    const isDecExit = data?.isDecisionExit === true;
     const isBackwardEdge = targetY < sourceY - 30;
     routeWps = storedWaypoints.map((wp, i) => {
-      if (isDecExit && !isBackwardEdge) {
-        // Decision exit manual: keep corner at targetX, sourceY level
-        if (i === 0) return { ...wp, x: targetX, y: sourceY };
-        if (i === storedWaypoints.length - 1) return { ...wp, x: targetX };
+      if (isDecExit && !isBackwardEdge && data?.exitColor !== 'retry') {
+        // Side-exit decision: keep corner tracking
+        if (i === 0) return { ...wp, y: sourceY };
         return wp;
       }
       // Standard: first wp tracks sourceX, last tracks targetX
-      if (i === 0)                           return { ...wp, x: sourceX };
-      if (i === storedWaypoints.length - 1)  return { ...wp, x: targetX };
+      if (i === 0)                                  return { ...wp, x: sourceX };
+      if (i === storedWaypoints.length - 1)         return { ...wp, x: targetX };
       return wp;
     });
   } else {
     routeWps = computeAutoRoute(src, tgt, data, getNodes());
   }
 
-  const { visiblePoints, segments } = buildOrthogonalRoute(src, routeWps, tgt);
-  const pathD = pointsToSvg(visiblePoints);
+  // Build the full orthogonal point sequence
+  const fullPts  = buildFullPath(src, routeWps, tgt);
+  const segments = buildSegments(fullPts, routeWps.length);
+  const pathD    = pointsToSvg(fullPts);
 
-  // ── Fresh waypoints from store for drag operations ─────────────────────────
+  // ── Fresh waypoints from store ──────────────────────────────────────────
   const freshWps = useCallback(() => {
     const st = useDiagramStore.getState();
     const currentSm = (st.project?.stateMachines ?? []).find(s => s.id === smId);
@@ -216,7 +220,9 @@ export function RoutableEdge({
     return Array.isArray(wps) ? [...wps] : [];
   }, [smId, id]);
 
-  // ── Segment drag — materializes manual waypoints on first drag ─────────────
+  // ── Segment drag ────────────────────────────────────────────────────────
+  // Dragging moves existing waypoints. No new waypoints are created.
+  // On mouse-up, collinear waypoints are merged.
   const onSegmentMouseDown = useCallback((e, seg, segIdx) => {
     e.stopPropagation();
     e.preventDefault();
@@ -224,52 +230,67 @@ export function RoutableEdge({
     const startX = e.clientX;
     const startY = e.clientY;
 
-    // If not yet manual, initialize stored waypoints from the current auto-route
+    // Initialize waypoints from current route if not yet manual
     const initWps = isManual ? freshWps() : routeWps.map(p => ({ ...p }));
-    let hasSaved = false;
+
+    // Map segment endpoints to waypoint indices
+    // fullPts = [src, ...corners/wps..., tgt]
+    // Waypoints are indices 1..fullPts.length-2 in fullPts
+    // But our stored waypoints are the routeWps array (which may have fewer entries
+    // than the fullPts corners if buildFullPath inserted auto-corners)
+    // For simplicity: when drag starts on auto-route, materialize all fullPts corners as waypoints
+    const dragWps = isManual ? initWps : fullPts.slice(1, -1).map(p => ({ ...p }));
+
+    // The segment's point indices in fullPts are seg.ptIdxA and seg.ptIdxB
+    // Waypoint indices are ptIdx - 1 (since fullPts[0] = src)
+    const wpIdxA = seg.ptIdxA - 1; // -1 = src (not a wp)
+    const wpIdxB = seg.ptIdxB - 1; // dragWps.length = tgt (not a wp)
 
     function onMove(ev) {
       const flow0 = screenToFlowPosition({ x: startX, y: startY });
       const flow1 = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
       const dx = flow1.x - flow0.x;
       const dy = flow1.y - flow0.y;
-      const wps = initWps.map(w => ({ ...w }));
+      const wps = dragWps.map(w => ({ ...w }));
 
       if (seg.isH) {
-        // Horizontal segment → drag vertically
-        const aIdx = seg.aOrigin?.type === 'wp' ? seg.aOrigin.idx
-          : (segIdx === 0 ? null : seg.aOrigin?.type === 'auto' ? Math.max(0, segIdx - 1) : null);
-        const bIdx = seg.bOrigin?.type === 'wp' ? seg.bOrigin.idx
-          : (segIdx < wps.length - 1 ? seg.bOrigin?.type === 'auto' ? Math.min(wps.length - 1, segIdx) : null : null);
-        if (aIdx != null && aIdx < wps.length) wps[aIdx] = { ...wps[aIdx], y: initWps[aIdx].y + dy };
-        if (bIdx != null && bIdx < wps.length && bIdx !== aIdx) wps[bIdx] = { ...wps[bIdx], y: initWps[bIdx].y + dy };
+        // Horizontal segment → drag vertically (change Y of both endpoints)
+        if (wpIdxA >= 0 && wpIdxA < wps.length) wps[wpIdxA] = { ...wps[wpIdxA], y: dragWps[wpIdxA].y + dy };
+        if (wpIdxB >= 0 && wpIdxB < wps.length) wps[wpIdxB] = { ...wps[wpIdxB], y: dragWps[wpIdxB].y + dy };
       } else {
-        // Vertical segment → drag horizontally
-        const aIdx = seg.aOrigin?.type === 'wp' ? seg.aOrigin.idx : null;
-        const bIdx = seg.bOrigin?.type === 'wp' ? seg.bOrigin.idx : null;
-        if (aIdx != null && aIdx < wps.length) wps[aIdx] = { ...wps[aIdx], x: initWps[aIdx].x + dx };
-        if (bIdx != null && bIdx < wps.length && bIdx !== aIdx) wps[bIdx] = { ...wps[bIdx], x: initWps[bIdx].x + dx };
+        // Vertical segment → drag horizontally (change X of both endpoints)
+        if (wpIdxA >= 0 && wpIdxA < wps.length) wps[wpIdxA] = { ...wps[wpIdxA], x: dragWps[wpIdxA].x + dx };
+        if (wpIdxB >= 0 && wpIdxB < wps.length) wps[wpIdxB] = { ...wps[wpIdxB], x: dragWps[wpIdxB].x + dx };
       }
 
-      // Save as manual on first actual movement
-      if (!hasSaved) { hasSaved = true; }
-      updateWP(smId, id, wps, true /* manualRoute */);
+      updateWP(smId, id, wps, true);
     }
 
-    function onUp() {
+    function onUp(ev) {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      // Clean up: merge collinear waypoints
+      const st = useDiagramStore.getState();
+      const currentSm = (st.project?.stateMachines ?? []).find(s => s.id === smId);
+      const edge = (currentSm?.edges ?? []).find(e => e.id === id);
+      const finalWps = edge?.data?.waypoints;
+      if (Array.isArray(finalWps) && finalWps.length > 1) {
+        const cleaned = cleanWaypoints(finalWps);
+        if (cleaned.length !== finalWps.length) {
+          updateWP(smId, id, cleaned, true);
+        }
+      }
     }
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [smId, id, screenToFlowPosition, updateWP, freshWps, pushHistory, isManual, routeWps]);
+  }, [smId, id, screenToFlowPosition, updateWP, freshWps, pushHistory, isManual, routeWps, fullPts]);
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
+  // ── Styles ──────────────────────────────────────────────────────────────
   const strokeColor = selected ? '#0072B5' : (style?.stroke ?? '#6b7280');
   const strokeW     = selected ? 3 : (style?.strokeWidth ?? 2);
 
-  // ── Label helpers ──────────────────────────────────────────────────────────
+  // ── Label helpers ──────────────────────────────────────────────────────
   const isBackward     = targetY < sourceY - 30;
   const isSidewaysEdge = Math.abs(sourceX - targetX) > 10;
 
@@ -298,77 +319,61 @@ export function RoutableEdge({
       {data?.isDecisionExit && data?.outcomeLabel && (() => {
         const isPass    = data.exitColor === 'pass';
         const isSingle  = data.exitColor === 'single';
-        const bgColor   = isSingle ? '#6b7280' : isPass ? '#16a34a' : '#dc2626';
+        const isRetry   = data.exitColor === 'retry';
+        const bgColor   = isRetry ? '#f59e0b' : isSingle ? '#6b7280' : isPass ? '#16a34a' : '#dc2626';
         const labelText = data.outcomeLabel;
         const charW     = 6.5;
         const pillW     = Math.max(80, labelText.length * charW + 20);
+        const textColor = isRetry ? '#000' : 'white';
 
-        if (!isBackward && !isSidewaysEdge) {
-          // Straight down (single-exit from bottom): horizontal pill at midpoint
-          const midX = (sourceX + targetX) / 2;
-          const midY = (sourceY + targetY) / 2;
+        // Find the longest segment for label placement
+        let bestSeg = segments[0];
+        let bestLen = 0;
+        for (const seg of segments) {
+          const len = seg.isH
+            ? Math.abs(seg.b.x - seg.a.x)
+            : Math.abs(seg.b.y - seg.a.y);
+          if (len > bestLen) { bestLen = len; bestSeg = seg; }
+        }
+
+        if (bestSeg.isH) {
+          // Horizontal label
           return (
             <g style={{ pointerEvents: 'none' }}>
-              <rect x={midX - pillW / 2} y={midY - 10} width={pillW} height={20} rx={10} fill={bgColor} opacity={0.9} />
-              <text x={midX} y={midY} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={11} fontWeight="600" style={{ userSelect: 'none' }}>{labelText}</text>
+              <rect x={bestSeg.mid.x - pillW / 2} y={bestSeg.mid.y - 10} width={pillW} height={20} rx={10} fill={bgColor} opacity={0.9} />
+              <text x={bestSeg.mid.x} y={bestSeg.mid.y} textAnchor="middle" dominantBaseline="central" fill={textColor} fontSize={11} fontWeight="600" style={{ userSelect: 'none' }}>{labelText}</text>
+            </g>
+          );
+        } else {
+          // Vertical label (rotated)
+          return (
+            <g style={{ pointerEvents: 'none' }}>
+              <rect x={bestSeg.mid.x - 10} y={bestSeg.mid.y - pillW / 2} width={20} height={pillW} rx={10} fill={bgColor} opacity={0.9} />
+              <text x={bestSeg.mid.x} y={bestSeg.mid.y} textAnchor="middle" dominantBaseline="central" fill={textColor} fontSize={11} fontWeight="600" transform={`rotate(-90, ${bestSeg.mid.x}, ${bestSeg.mid.y})`} style={{ userSelect: 'none' }}>{labelText}</text>
             </g>
           );
         }
+      })()}
 
-        if (!isBackward && isSidewaysEdge) {
-          // Sideways forward: label on the vertical drop segment
-          // Vertical drop is at targetX, runs from sourceY to targetY — always use live positions
-          const labelX = targetX;
-          const labelY = (sourceY + targetY) / 2;
-          return (
-            <g style={{ pointerEvents: 'none' }}>
-              <rect x={labelX - 10} y={labelY - pillW / 2} width={20} height={pillW} rx={10} fill={bgColor} opacity={0.9} />
-              <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={11} fontWeight="600" transform={`rotate(-90, ${labelX}, ${labelY})`} style={{ userSelect: 'none' }}>{labelText}</text>
-            </g>
-          );
-        }
-
-        // Backward: find the longest vertical segment (outer side of U)
-        let labelSeg = segments[segments.length - 1];
-        let bestLen  = 0;
+      {/* Outcome label for branching edges (CheckResults + VisionInspect) */}
+      {(data?.conditionType === 'checkResult' || data?.conditionType === 'visionResult') && data?.outcomeLabel && !data?.isDecisionExit && segments.length > 0 && (() => {
+        // Find longest vertical segment for label
+        let labelSeg = segments[segments.length > 1 ? 1 : 0];
+        let bestLen = 0;
         for (const seg of segments) {
           if (!seg.isH) {
             const len = Math.abs(seg.b.y - seg.a.y);
             if (len > bestLen) { bestLen = len; labelSeg = seg; }
           }
         }
-        return (
-          <g style={{ pointerEvents: 'none' }}>
-            <rect x={labelSeg.mid.x - 10} y={labelSeg.mid.y - pillW / 2} width={20} height={pillW} rx={10} fill={bgColor} opacity={0.9} />
-            <text x={labelSeg.mid.x} y={labelSeg.mid.y} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={11} fontWeight="600" transform={`rotate(-90, ${labelSeg.mid.x}, ${labelSeg.mid.y})`} style={{ userSelect: 'none' }}>{labelText}</text>
-          </g>
-        );
-      })()}
-
-      {/* Outcome label for branching edges (CheckResults + VisionInspect) — skip if already rendered as decision exit pill */}
-      {(data?.conditionType === 'checkResult' || data?.conditionType === 'visionResult') && data?.outcomeLabel && !data?.isDecisionExit && segments.length > 0 && (() => {
-        const isBack = isBackward && segments.length >= 3;
-        let labelSeg;
-        if (isBack) {
-          let bestIdx = 1, bestLen = 0;
-          for (let si = 0; si < segments.length; si++) {
-            const s = segments[si];
-            if (!s.isH) {
-              const len = Math.abs(s.b.y - s.a.y);
-              if (len > bestLen) { bestLen = len; bestIdx = si; }
-            }
-          }
-          labelSeg = segments[bestIdx];
-        } else {
-          labelSeg = segments.length > 1 ? segments[1] : segments[0];
-        }
+        if (bestLen === 0) labelSeg = segments[segments.length > 1 ? 1 : 0];
 
         const outcomeIdx = data.outcomeIndex ?? 0;
         const bgColor    = OUTCOME_COLORS[outcomeIdx % OUTCOME_COLORS.length];
         const labelText  = data.outcomeLabel;
         const charW      = 6.5;
         const pillW      = Math.max(80, labelText.length * charW + 20);
-        const isVert     = !labelSeg.isH && isBack;
+        const isVert     = !labelSeg.isH;
 
         return (
           <g style={{ pointerEvents: 'none' }}>
@@ -387,14 +392,10 @@ export function RoutableEdge({
         );
       })()}
 
-      {/* Segment drag overlays — show on selected edges (manual or auto) */}
+      {/* Segment drag overlays — show on selected edges */}
       {selected && segments.map((seg, i) => {
-        // Only drag segments that touch a waypoint (manual) OR any segment of auto-route
-        const isDraggable = isManual
-          ? (seg.aOrigin?.type === 'wp' || seg.bOrigin?.type === 'wp')
-          : true; // auto-route: all segments are draggable (materializes on first drag)
-        if (!isDraggable) return null;
-
+        // Skip the very first segment (src→first corner) and last (last corner→tgt)
+        // if they are just the endpoint stub. Actually, make all draggable.
         const cursor  = seg.isH ? 'ns-resize' : 'ew-resize';
         const segPath = `M ${seg.a.x} ${seg.a.y} L ${seg.b.x} ${seg.b.y}`;
         return (

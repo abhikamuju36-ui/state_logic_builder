@@ -288,6 +288,39 @@ export const DEVICE_TYPES = {
     },
   },
 
+  AnalogSensor: {
+    label: 'Analog Sensor / Probe',
+    icon: '📊',
+    color: '#6366f1',
+    colorBg: '#eef2ff',
+    sides: 14,
+    category: 'Sensor',
+    operations: [
+      { value: 'CheckRange', label: 'Check In Range', verb: 'CheckRange', icon: '📊' },
+      { value: 'ReadValue', label: 'Read Value', verb: 'ReadValue', icon: '📏' },
+    ],
+    tagPatterns: {
+      inputTag:     'i_{name}',
+      scaledTag:    '{name}Scaled',
+      highLimit:    '{name}HighLim',
+      lowLimit:     '{name}LowLim',
+      inRangeTag:   '{name}RC.In_Range',
+      debounce:     '{name}Debounce',
+    },
+    defaultTimerPreMs: 10,
+    transitionConditions: {
+      CheckRange: {
+        type: 'analogRange',
+        inRangeTag: '{name}RC.In_Range',
+        labelTemplate: "'{deviceName}' In Range",
+      },
+      ReadValue: {
+        type: 'immediate',
+        labelTemplate: "'{deviceName}' Value Read",
+      },
+    },
+  },
+
   VisionSystem: {
     label: 'Vision System',
     icon: '📷',
@@ -358,7 +391,7 @@ export const DEVICE_CATEGORIES = {
   Pneumatic: ['PneumaticLinearActuator', 'PneumaticRotaryActuator', 'PneumaticGripper', 'PneumaticVacGenerator'],
   Servo: ['ServoAxis'],
   Logic: ['Timer', 'Parameter'],
-  Sensor: ['DigitalSensor', 'VisionSystem'],
+  Sensor: ['DigitalSensor', 'AnalogSensor', 'VisionSystem'],
 };
 
 /**

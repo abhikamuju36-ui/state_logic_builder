@@ -4,7 +4,7 @@
  * The default recipe shows base device values. Non-default recipes override from the default.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { useDiagramStore } from '../../store/useDiagramStore.js';
 
 export function RecipeManagerModal() {
@@ -13,11 +13,43 @@ export function RecipeManagerModal() {
   const recipes = project.recipes ?? [];
   const overrides = project.recipeOverrides ?? {};
   const sms = project.stateMachines ?? [];
+  const sequenceVariants = project.sequenceVariants ?? [];
 
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [expandedSpeeds, setExpandedSpeeds] = useState({});  // { "smId|device": true }
+  // Auto-size: ~160px per recipe column + 140px for param column, clamped to screen
+  const autoWidth = Math.max(600, Math.min(140 + recipes.length * 160, window.innerWidth * 0.95));
+  const [modalWidth, setModalWidth] = useState(autoWidth);
+  const resizing = useRef(false);
+
+  // Update width when recipe count changes
+  useMemo(() => {
+    if (!resizing.current) {
+      const w = Math.max(600, Math.min(140 + recipes.length * 160, window.innerWidth * 0.95));
+      setModalWidth(w);
+    }
+  }, [recipes.length]);
+
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    resizing.current = true;
+    const startX = e.clientX;
+    const startW = modalWidth;
+    function onMove(ev) {
+      // Resize from right edge — double the delta since modal is centered
+      const delta = (ev.clientX - startX) * 2;
+      setModalWidth(Math.max(600, Math.min(startW + delta, window.innerWidth * 0.98)));
+    }
+    function onUp() {
+      resizing.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [modalWidth]);
 
   // Find the default recipe
   const defaultRecipe = recipes.find(r => r.isDefault) ?? recipes[0];
@@ -34,6 +66,7 @@ export function RecipeManagerModal() {
 
         // Servo positions only
         if (dev.type === 'ServoAxis') {
+          const isRotary = dev.motionType === 'rotary';
           for (const pos of (dev.positions ?? [])) {
             params.push({
               category: 'positions',
@@ -45,7 +78,7 @@ export function RecipeManagerModal() {
               devId: dev.id,
               posName: pos.name,
               type: 'number',
-              unit: 'mm',
+              unit: isRotary ? 'deg' : 'mm',
               baseValue: pos.defaultValue ?? 0,
               isSpeed: false,
             });
@@ -64,7 +97,7 @@ export function RecipeManagerModal() {
                 speedProfileName: sp.name,
                 speedField: field,
                 type: 'number',
-                unit: field === 'speed' ? 'mm/s' : 'mm/s\u00B2',
+                unit: field === 'speed' ? (isRotary ? 'deg/s' : 'mm/s') : (isRotary ? 'deg/s²' : 'mm/s²'),
                 baseValue: sp[field] ?? 0,
                 isSpeed: true,
               });
@@ -229,7 +262,15 @@ export function RecipeManagerModal() {
 
   return (
     <div className="modal-overlay" onClick={store.closeRecipeManager}>
-      <div className="modal" style={{ width: 'min(95vw, 1100px)', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ width: Math.min(modalWidth, window.innerWidth * 0.95), maxHeight: '90vh', position: 'relative' }} onClick={e => e.stopPropagation()}>
+        {/* Resize handle — right edge */}
+        <div
+          onMouseDown={handleResizeStart}
+          style={{
+            position: 'absolute', top: 0, right: -4, width: 8, height: '100%',
+            cursor: 'col-resize', zIndex: 10,
+          }}
+        />
 
         {/* Header */}
         <div className="modal__header">
@@ -239,25 +280,6 @@ export function RecipeManagerModal() {
 
         {/* Body */}
         <div className="modal__body" style={{ padding: 0 }}>
-
-          {/* Legend */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 16, padding: '6px 16px',
-            background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, color: '#64748b',
-          }}>
-            <span style={{ fontWeight: 600, color: '#374151' }}>Legend:</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: '#fef9c3', border: '1.5px solid #fde047' }} />
-              Value differs from default recipe
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: '#eff6ff', border: '1.5px solid #93c5fd' }} />
-              Default recipe column
-            </span>
-            <span style={{ color: '#9ca3af', marginLeft: 'auto' }}>
-              Leave a cell blank to inherit the default recipe value
-            </span>
-          </div>
 
           {/* Add recipe bar */}
           <div className="recipe-add-bar">
@@ -299,30 +321,30 @@ export function RecipeManagerModal() {
                           ) : (
                             <span
                               className="recipe-header__name"
-                              onDoubleClick={() => startEditName(r)}
-                              title="Double-click to rename"
+                              onClick={() => startEditName(r)}
+                              title="Click to rename"
+                              style={{ cursor: 'text' }}
                             >
                               {r.name}
+                              <span className="recipe-header__edit-hint">✏</span>
                               {r.isDefault && <span className="recipe-header__default-badge">DEFAULT</span>}
                             </span>
                           )}
+                          {/* Custom sequence badge */}
+                          {(r.customSequence || r.sequenceVariantId) && !r.isDefault && (() => {
+                            const variantName = r.sequenceVariantId
+                              ? sequenceVariants.find(v => v.id === r.sequenceVariantId)?.name
+                              : null;
+                            return (
+                              <span className="recipe-header__custom-badge" title="This recipe uses a custom sequence">
+                                {variantName ?? 'CUSTOM SEQ'}
+                              </span>
+                            );
+                          })()}
                           <div className="recipe-header__actions">
-                            <label className="recipe-header__check" title="Custom sequence — this recipe has its own state machine layout">
-                              <input
-                                type="checkbox"
-                                checked={r.customSequence ?? false}
-                                onChange={() => {
-                                  if (r.customSequence) {
-                                    if (!confirm(`Revert "${r.name}" to the default sequence? Custom sequence changes will be lost.`)) return;
-                                  }
-                                  store.toggleCustomSequence(r.id);
-                                }}
-                              />
-                              <span style={{ fontSize: 11 }}>Custom Seq</span>
-                            </label>
                             <button
                               className="recipe-header__btn"
-                              title="Set as default"
+                              title={r.isDefault ? 'This is the default recipe' : 'Set as default recipe'}
                               onClick={() => store.setDefaultRecipe(r.id)}
                               style={{ color: r.isDefault ? '#f59e0b' : undefined }}
                             >&#9733;</button>

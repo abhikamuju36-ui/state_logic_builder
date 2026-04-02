@@ -20,7 +20,7 @@ const url  = require('url');
 const os   = require('os');
 
 const PORT     = Number(process.env.PORT) || 3131;
-const DATA_DIR = process.env.DATA_DIR || 'N:\\10000_State_Logic_Diagram';
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'projects');
 const DIST_DIR = process.env.DIST_DIR || path.join(__dirname, 'dist');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });

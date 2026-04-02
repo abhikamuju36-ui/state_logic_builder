@@ -23,6 +23,7 @@ import { StateNode } from './nodes/StateNode.jsx';
 import { DecisionNode } from './nodes/DecisionNode.jsx';
 import { RoutableEdge } from './edges/RoutableEdge.jsx';
 import { DrawingConnectionLine } from './edges/DrawingConnectionLine.jsx';
+import { ManualDrawOverlay } from './edges/ManualDrawOverlay.jsx';
 import { useDiagramStore } from '../store/useDiagramStore.js';
 import { buildVerifyLabel } from '../lib/conditionBuilder.js';
 import { computeStateNumbers } from '../lib/computeStateNumbers.js';
@@ -135,17 +136,62 @@ function getVerifyEdgeData(sm, sourceNodeId) {
   return { conditionType: 'verify', label, conditions };
 }
 
+// Viewport storage per SM (persists across tab lifetime, not in localStorage)
+const smViewports = {};
+
 export function Canvas() {
   const store = useDiagramStore();
   const sm = store.getActiveSm();
   const reactFlowWrapper = useRef(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setCenter, getViewport, fitView } = useReactFlow();
   const [selectMode, setSelectMode] = useState(false);
+  const prevSmIdRef = useRef(null);
+
+  // ── Viewport persistence per SM ──────────────────────────────────────────
+  useEffect(() => {
+    const currentSmId = sm?.id;
+    const prevSmId = prevSmIdRef.current;
+
+    if (prevSmId && prevSmId !== currentSmId) {
+      try { smViewports[prevSmId] = getViewport(); } catch (_) { /* not mounted yet */ }
+    }
+
+    if (currentSmId && currentSmId !== prevSmId) {
+      setTimeout(() => fitView({ padding: 0.2, duration: 250, maxZoom: 1 }), 50);
+    }
+
+    prevSmIdRef.current = currentSmId;
+  }, [sm?.id]);
+
+  const onMoveEnd = useCallback((_event, viewport) => {
+    if (sm?.id) smViewports[sm.id] = viewport;
+  }, [sm?.id]);
+
+  // ── Ref for finalizeManualDraw (assigned after definition below) ──────────
+  const finalizeDrawRef = useRef(null);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   useEffect(() => {
     function handleKeyDown(e) {
       const mod = e.ctrlKey || e.metaKey;
+      // Enter: finalize manual draw mode
+      if (e.key === 'Enter') {
+        const { _isDrawingConnection, _drawingSource } = useDiagramStore.getState();
+        if (_isDrawingConnection && _drawingSource && finalizeDrawRef.current) {
+          e.preventDefault();
+          finalizeDrawRef.current();
+          return;
+        }
+      }
+      // Escape: cancel manual draw mode
+      if (e.key === 'Escape') {
+        const { _isDrawingConnection, _drawingSource } = useDiagramStore.getState();
+        if (_isDrawingConnection && _drawingSource) {
+          e.preventDefault();
+          useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+          return;
+        }
+      }
       // Ctrl+D: duplicate selected node
       if (mod && e.key === 'd') {
         e.preventDefault();
@@ -301,10 +347,17 @@ export function Canvas() {
       );
     }
 
+    // Scroll viewport to show the new node
+    if (opts.position) {
+      setTimeout(() => {
+        setCenter(opts.position.x + 120, opts.position.y + 40, { zoom: getViewport().zoom, duration: 300 });
+      }, 50);
+    }
+
     // Signal the new node to auto-open its inline action picker
     store.setOpenPickerOnNode(newNodeId);
     return newNodeId;
-  }, [sm, store]);
+  }, [sm, store, setCenter, getViewport]);
 
   // ── Node / Edge change handlers ────────────────────────────────────────────
   const onNodesChange = useCallback((changes) => {
@@ -340,6 +393,19 @@ export function Canvas() {
     // Single-exit: just a plain gray transition — no colors, no label, no condition
     if (handle === 'exit-single') {
       return { conditionType: isVisionExit ? 'visionResult' : 'ready' };
+    }
+
+    // Retry exit: amber colored
+    if (handle === 'exit-retry') {
+      const sigName = sourceNode.data?.signalName ?? '';
+      const label = `Retry_Fail_${sigName}`;
+      return {
+        conditionType: 'ready',
+        label,
+        outcomeLabel: label,
+        isDecisionExit: true,
+        exitColor: 'retry',
+      };
     }
 
     // Pass / Fail exits: colored with label
@@ -379,9 +445,10 @@ export function Canvas() {
     // Check if this is a decision exit edge — if so, use decision styling instead of verify data
     const decExitData = getDecisionExitData(connection.source, connection.sourceHandle);
     const edgeCond = decExitData ?? getVerifyEdgeData(sm, connection.source);
-    // Merge drawing waypoints into the edge data
+    // Merge drawing waypoints into the edge data — mark as manual route so they persist
     if (drawingWps && drawingWps.length > 0) {
       edgeCond.waypoints = drawingWps;
+      edgeCond.manualRoute = true;
     }
     const edgeId = store.addEdge(sm.id, connection, edgeCond);
     // Don't open transition modal for decision exit edges — they're auto-configured
@@ -390,31 +457,51 @@ export function Canvas() {
       store.openTransitionModal(edgeId);
     }
     // Clear drawing state
-    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [] });
+    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
   }, [sm, store, getDecisionExitData]);
 
   /**
-   * Drag a source handle to empty canvas space → create new node + auto-connect.
-   * Also clears click-to-draw state.
+   * Drag a source handle to empty canvas space → either:
+   *   - Shift held: enter manual draw mode (click to place waypoints)
+   *   - Normal: create new node + auto-connect immediately
    */
   const onConnectEnd = useCallback((event, connectionState) => {
-    // Always clear drawing state when connection ends
-    const drawingWps = useDiagramStore.getState()._drawingWaypoints;
-    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [] });
-
-    if (connectionState.toNode) return;
-    if (!sm) return;
+    // If it connected to a node normally, clear drawing state and we're done
+    if (connectionState.toNode) {
+      useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+      return;
+    }
+    if (!sm) {
+      useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+      return;
+    }
 
     const fromNode = connectionState.fromNode;
-    if (!fromNode) return;
+    if (!fromNode) {
+      useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+      return;
+    }
 
+    const fromHandle = connectionState.fromHandle?.id ?? null;
     const cursorFlow = screenToFlowPosition({
       x: event.clientX ?? event.touches?.[0]?.clientX ?? 0,
       y: event.clientY ?? event.touches?.[0]?.clientY ?? 0,
     });
 
-    // Branch detection: if source already has outgoing edges, use cursor X (user chose offset)
-    // Otherwise align straight below source node
+    // ── Shift held → enter manual draw mode ───────────────────────────────
+    if (event.shiftKey) {
+      const firstWp = { x: cursorFlow.x, y: cursorFlow.y };
+      useDiagramStore.setState({
+        _isDrawingConnection: true,
+        _drawingSource: { nodeId: fromNode.id, handleId: fromHandle },
+        _drawingWaypoints: [firstWp],
+      });
+      return;
+    }
+
+    // ── Normal mode: create a new node and connect immediately ────────────
+    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+
     const existingOutEdges = (sm.edges ?? []).filter(e => e.source === fromNode.id);
     const position = {
       x: existingOutEdges.length > 0 ? cursorFlow.x : fromNode.position.x,
@@ -424,31 +511,89 @@ export function Canvas() {
     const newNodeId = store.addNode(sm.id, { position });
     if (!newNodeId) return;
 
-    const fromHandle = connectionState.fromHandle?.id ?? null;
     const decExitData = getDecisionExitData(fromNode.id, fromHandle);
     const edgeCond = decExitData ?? getVerifyEdgeData(sm, fromNode.id);
-    // Include any drawing waypoints in the new edge
-    if (drawingWps && drawingWps.length > 0) {
-      edgeCond.waypoints = drawingWps;
-    }
     store.addEdge(
       sm.id,
-      {
-        source: fromNode.id,
-        sourceHandle: fromHandle,
-        target: newNodeId,
-        targetHandle: null,
-      },
+      { source: fromNode.id, sourceHandle: fromHandle, target: newNodeId, targetHandle: null },
       edgeCond
     );
 
     store.setOpenPickerOnNode(newNodeId);
-  }, [sm, store, screenToFlowPosition]);
+  }, [sm, store, screenToFlowPosition, getDecisionExitData]);
+
+  /**
+   * Finalize manual draw: create edge (and optionally a new target node).
+   * Called when user presses Enter or clicks a node during draw mode.
+   */
+  const finalizeManualDraw = useCallback((targetNodeId = null) => {
+    const { _drawingSource, _drawingWaypoints } = useDiagramStore.getState();
+    if (!_drawingSource || !sm) {
+      useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+      return;
+    }
+
+    const fromNodeId = _drawingSource.nodeId;
+    const fromHandle = _drawingSource.handleId;
+    const wps = _drawingWaypoints ?? [];
+
+    let actualTarget = targetNodeId;
+
+    if (!actualTarget && wps.length > 0) {
+      const lastWp = wps[wps.length - 1];
+      const fromNode = sm.nodes.find(n => n.id === fromNodeId);
+      const existingOutEdges = (sm.edges ?? []).filter(e => e.source === fromNodeId);
+      const position = {
+        x: existingOutEdges.length > 0 ? lastWp.x : (fromNode?.position?.x ?? lastWp.x),
+        y: lastWp.y,
+      };
+      actualTarget = store.addNode(sm.id, { position });
+      if (!actualTarget) {
+        useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+        return;
+      }
+      store.setOpenPickerOnNode(actualTarget);
+    } else if (!actualTarget) {
+      useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+      return;
+    }
+
+    const decExitData = getDecisionExitData(fromNodeId, fromHandle);
+    const edgeCond = decExitData ?? getVerifyEdgeData(sm, fromNodeId);
+
+    if (wps.length > 0) {
+      edgeCond.waypoints = wps;
+      edgeCond.manualRoute = true;
+    }
+
+    const edgeId = store.addEdge(
+      sm.id,
+      { source: fromNodeId, sourceHandle: fromHandle, target: actualTarget, targetHandle: null },
+      edgeCond
+    );
+
+    if (!decExitData && edgeId) {
+      store.setSelectedEdge(edgeId);
+      store.openTransitionModal(edgeId);
+    }
+
+    useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
+  }, [sm, store, getDecisionExitData]);
+
+  // Assign ref so keyboard handler can call finalizeManualDraw
+  finalizeDrawRef.current = finalizeManualDraw;
 
   // ── Click handlers ────────────────────────────────────────────────────────
   const onNodeClick = useCallback((event, node) => {
+    // If we're in manual draw mode, clicking a node completes the connection to it
+    const isDrawing = useDiagramStore.getState()._isDrawingConnection;
+    const drawSource = useDiagramStore.getState()._drawingSource;
+    if (isDrawing && drawSource && node.id !== drawSource.nodeId) {
+      finalizeManualDraw(node.id);
+      return;
+    }
     store.setSelectedNode(node.id);
-  }, [store]);
+  }, [store, finalizeManualDraw]);
 
   const onEdgeClick = useCallback((event, edge) => {
     store.setSelectedEdge(edge.id);
@@ -460,14 +605,23 @@ export function Canvas() {
   }, [store]);
 
   const onPaneClick = useCallback((event) => {
-    // If we're in drawing-connection mode (handle drag), add a waypoint instead of clearing selection
+    // If we're in drawing-connection mode, add an ortho-snapped waypoint
     const isDrawing = useDiagramStore.getState()._isDrawingConnection;
     if (isDrawing) {
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-      useDiagramStore.setState(s => ({
-        _drawingWaypoints: [...s._drawingWaypoints, { x: flowPos.x, y: flowPos.y }],
-      }));
-      return; // Don't clear selection while drawing
+      useDiagramStore.setState(s => {
+        const prev = s._drawingWaypoints;
+        if (prev.length === 0) return { _drawingWaypoints: [{ x: flowPos.x, y: flowPos.y }] };
+        const last = prev[prev.length - 1];
+        const dx = Math.abs(flowPos.x - last.x);
+        const dy = Math.abs(flowPos.y - last.y);
+        if (dx > dy) {
+          return { _drawingWaypoints: [...prev, { x: flowPos.x, y: last.y }] };
+        } else {
+          return { _drawingWaypoints: [...prev, { x: last.x, y: flowPos.y }] };
+        }
+      });
+      return;
     }
     store.clearSelection();
     useDiagramStore.setState(s => ({ _closePickerSignal: s._closePickerSignal + 1 }));
@@ -624,7 +778,9 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+        minZoom={0.05}
+        onMoveEnd={onMoveEnd}
         defaultEdgeOptions={{
           type: 'routableEdge',
           style: { stroke: '#6b7280', strokeWidth: 2 },
@@ -646,6 +802,15 @@ export function Canvas() {
           }}
           maskColor="rgba(255,255,255,0.7)"
         />
+
+        {/* SM title header on canvas */}
+        {sm && (
+          <div className="canvas-sm-title">
+            <span className="canvas-sm-title__number">S{String(sm.stationNumber ?? 0).padStart(2, '0')}</span>
+            <span className="canvas-sm-title__name">{sm.name || 'Untitled'}</span>
+          </div>
+        )}
+        <ManualDrawOverlay />
 
         {/* Floating buttons — add state + renumber */}
         <div className="canvas-add-btn" title="Add State (Ctrl+D duplicates selected)">

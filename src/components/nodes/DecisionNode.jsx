@@ -76,6 +76,10 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
   const [sensorTag, setSensorTag] = useState(data.sensorTag ?? '');
   const [sensorInputType, setSensorInputType] = useState(data.sensorInputType ?? 'bool'); // 'bool' | 'range'
 
+  // Retry counter config (only meaningful for 'wait' mode)
+  const [retryEnabled, setRetryEnabled] = useState(data.retryEnabled ?? false);
+  const [retryMax, setRetryMax] = useState(data.retryMax ?? 3);
+
   // After picking any signal/vision, show branch config step
   const [showBranchConfig, setShowBranchConfig] = useState(!!data.signalId);
 
@@ -201,12 +205,19 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
       sensorRef,
       sensorTag,
       sensorInputType,
+      // Retry counter (wait mode only)
+      retryEnabled: nodeMode === 'wait' ? retryEnabled : false,
+      retryMax: nodeMode === 'wait' && retryEnabled ? Number(retryMax) || 3 : undefined,
     };
     store.updateNodeData(smId, nodeId, updatedData);
     if (exitCount === 2) {
       store.addDecisionBranches(smId, nodeId, exit1Label, exit2Label);
     } else if (exitCount === 1) {
       store.addDecisionSingleBranch(smId, nodeId, exit1Label);
+    }
+    // Create retry branch if retry is enabled (only for wait mode with 2 exits)
+    if (nodeMode === 'wait' && retryEnabled && exitCount === 2) {
+      store.addDecisionRetryBranch(smId, nodeId);
     }
     onClose();
   }
@@ -592,6 +603,54 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
             </div>
           )}
 
+          {/* ── Retry counter (wait mode only) ─────────────── */}
+          {nodeMode === 'wait' && (
+            <div style={{ background: '#111827', border: '1px solid #374151', borderRadius: 6, padding: '6px 8px', marginBottom: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label
+                  className="nodrag"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', flex: 1 }}
+                  onClick={() => setRetryEnabled(!retryEnabled)}
+                >
+                  <span style={{
+                    width: 14, height: 14, borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    background: retryEnabled ? '#f59e0b' : '#1a1f2e',
+                    border: retryEnabled ? '1px solid #d97706' : '1px solid #374151',
+                    fontSize: 10, color: '#000', fontWeight: 700,
+                  }}>
+                    {retryEnabled ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: retryEnabled ? '#f59e0b' : '#6b7280' }}>
+                    Retry Counter
+                  </span>
+                </label>
+                {retryEnabled && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 9, color: '#9ca3af' }}>Max:</span>
+                    <input
+                      className="nodrag"
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={retryMax}
+                      onChange={e => setRetryMax(e.target.value)}
+                      style={{
+                        width: 44, background: '#1a1f2e', border: '1px solid #374151',
+                        color: '#e5e7eb', borderRadius: 4, padding: '2px 4px', fontSize: 11,
+                        textAlign: 'center', boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+              {retryEnabled && (
+                <div style={{ fontSize: 8, color: '#6b7280', marginTop: 3, lineHeight: 1.3 }}>
+                  If condition fails, retry up to {retryMax}x before taking the fail branch.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Done button */}
           <button
             className="nodrag"
@@ -635,6 +694,8 @@ export function DecisionNode({ data, selected, id }) {
     sensorRef = null,
     sensorTag = '',
     sensorInputType = 'bool',
+    retryEnabled = false,
+    retryMax = 3,
   } = data;
 
   const store = useDiagramStore();
@@ -823,6 +884,18 @@ export function DecisionNode({ data, selected, id }) {
             {sourceLabel}
           </span>
         )}
+        {/* Retry badge */}
+        {retryEnabled && nodeMode === 'wait' && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 3,
+            fontSize: 9, fontWeight: 700,
+            background: 'rgba(0,0,0,0.3)', color: '#fbbf24',
+            padding: '1px 6px', borderRadius: 8, marginTop: 3,
+            letterSpacing: '0.03em',
+          }}>
+            ↻ Retry x{retryMax}
+          </span>
+        )}
       </div>
 
 
@@ -871,6 +944,17 @@ export function DecisionNode({ data, selected, id }) {
             style={{ top: '50%', background: '#ef4444', width: 10, height: 10, border: '2px solid #fff' }}
           />
         </>
+      )}
+
+      {/* Bottom handle for retry branch (only when retry is enabled + 2-exit) */}
+      {retryEnabled && exitCount === 2 && signalName && signalName !== 'Select Signal...' && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="exit-retry"
+          style={{ left: '50%', background: '#f59e0b', width: 10, height: 10, border: '2px solid #fff' }}
+          isConnectable
+        />
       )}
 
       {/* Right-click context menu via portal */}

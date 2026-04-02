@@ -19,27 +19,52 @@ const defaultProject = {
   stateMachines: [],
   partTracking: { fields: [] },
   signals: [],
-  recipes: [],           // [{ id, name, description, isDefault, customSequence }]
-  recipeOverrides: {},    // { [recipeId]: { positions, timers, speeds, skippedNodes } }
+  recipes: [],           // [{ id, name, description, isDefault, customSequence, sequenceVariantId }]
+  recipeOverrides: {},    // { [recipeId]: { positions, timers, speeds, skippedNodes, customSMs } }
+  sequenceVariants: [],   // [{ id, name, stateMachines: [...] }]  — named alternative sequences
 };
 
 // ─── Recipe-aware SM helpers ─────────────────────────────────────────────────
 // These are defined outside the store so every action can reference them.
 
-/** Return the correct SM array (base or custom) for the current recipe context. */
+/** Return the correct SM array (base or custom/variant) for the current recipe context. */
 function _getSmArray(state) {
   const { activeRecipeId, project } = state;
   if (!activeRecipeId) return project.stateMachines ?? [];
   const recipe = (project.recipes ?? []).find(r => r.id === activeRecipeId);
-  if (!recipe?.customSequence) return project.stateMachines ?? [];
-  const customSMs = project.recipeOverrides?.[activeRecipeId]?.customSMs;
-  return customSMs ?? project.stateMachines ?? [];
+  if (!recipe) return project.stateMachines ?? [];
+
+  // Named sequence variant takes precedence
+  if (recipe.sequenceVariantId) {
+    const variant = (project.sequenceVariants ?? []).find(v => v.id === recipe.sequenceVariantId);
+    if (variant) return variant.stateMachines ?? [];
+  }
+
+  // Legacy: per-recipe custom SMs
+  if (recipe.customSequence) {
+    const customSMs = project.recipeOverrides?.[activeRecipeId]?.customSMs;
+    return customSMs ?? project.stateMachines ?? [];
+  }
+
+  return project.stateMachines ?? [];
 }
 
 /** Apply an updater function to the correct SM array and return the new project. */
 function _updateProject(state, smsUpdater) {
   const { activeRecipeId, project } = state;
   const recipe = (project.recipes ?? []).find(r => r.id === activeRecipeId);
+
+  // Named sequence variant
+  if (recipe?.sequenceVariantId) {
+    const variants = [...(project.sequenceVariants ?? [])];
+    const vi = variants.findIndex(v => v.id === recipe.sequenceVariantId);
+    if (vi >= 0) {
+      variants[vi] = { ...variants[vi], stateMachines: smsUpdater(variants[vi].stateMachines ?? []) };
+      return { ...project, sequenceVariants: variants };
+    }
+  }
+
+  // Legacy per-recipe custom SMs
   const isCustom = recipe?.customSequence && project.recipeOverrides?.[activeRecipeId]?.customSMs;
 
   if (isCustom) {
@@ -86,7 +111,8 @@ export const useDiagramStore = create(
       pendingEdgeData: null, // used when connecting two nodes
       openPickerOnNodeId: null, // signals a node to auto-open its inline picker
       _closePickerSignal: 0,   // increment to close all inline pickers
-      _isDrawingConnection: false, // true while user is dragging from a handle
+      _isDrawingConnection: false, // true while user is dragging/clicking waypoints
+      _drawingSource: null,        // { nodeId, handleId } — source of manual draw connection
       _drawingWaypoints: [],       // waypoints placed by clicking during connection
 
       // ── Computed helpers ──────────────────────────────────────────────────
@@ -287,6 +313,26 @@ export const useDiagramStore = create(
 
       setActiveSm(id) {
         set({ activeSmId: id, selectedNodeId: null, selectedEdgeId: null });
+      },
+
+      reorderStateMachines(fromIndex, toIndex) {
+        get()._pushHistory();
+        set(s => {
+          const sms = [...s.project.stateMachines];
+          const [moved] = sms.splice(fromIndex, 1);
+          sms.splice(toIndex, 0, moved);
+          return { project: { ...s.project, stateMachines: sms } };
+        });
+      },
+
+      reorderRecipes(fromIndex, toIndex) {
+        get()._pushHistory();
+        set(s => {
+          const recipes = [...(s.project.recipes ?? [])];
+          const [moved] = recipes.splice(fromIndex, 1);
+          recipes.splice(toIndex, 0, moved);
+          return { project: { ...s.project, recipes } };
+        });
       },
 
       // ── Device actions ────────────────────────────────────────────────────
@@ -604,6 +650,56 @@ export const useDiagramStore = create(
         }));
       },
 
+      /** Add a retry branch (bottom exit) to a decision/wait node that already has pass/fail branches */
+      addDecisionRetryBranch(smId, nodeId) {
+        get()._pushHistory();
+        const sm = _getSmArray(get()).find(s => s.id === smId);
+        if (!sm) return;
+        const decisionNode = sm.nodes.find(n => n.id === nodeId);
+        if (!decisionNode) return;
+
+        // Don't create duplicate retry branch
+        const existingRetry = sm.edges.find(e => e.source === nodeId && e.sourceHandle === 'exit-retry');
+        if (existingRetry) return;
+
+        const retryNodeId = uid();
+        const retryEdgeId = uid();
+
+        const retryNode = {
+          id: retryNodeId,
+          type: 'stateNode',
+          position: { x: decisionNode.position.x, y: decisionNode.position.y + 220 },
+          data: { label: 'Retry_Fail', actions: [], isInitial: false, stepNumber: sm.nodes.length },
+        };
+
+        const retryEdge = {
+          id: retryEdgeId,
+          source: nodeId,
+          sourceHandle: 'exit-retry',
+          target: retryNodeId,
+          targetHandle: null,
+          type: 'routableEdge',
+          animated: false,
+          style: { stroke: '#f59e0b', strokeWidth: 2 },
+          markerEnd: { type: 'ArrowClosed', color: '#f59e0b' },
+          label: 'Retry_Fail',
+          labelStyle: { fill: '#000', fontWeight: 600, fontSize: 11 },
+          labelBgStyle: { fill: '#f59e0b', rx: 4, ry: 4 },
+          labelBgPadding: [4, 8],
+          data: { conditionType: 'ready', label: 'Retry_Fail', outcomeLabel: 'Retry_Fail', isDecisionExit: true, exitColor: 'retry' },
+        };
+
+        set(s => ({
+          project: _updateProject(s, sms => sms.map(sm =>
+              sm.id !== smId ? sm : {
+                ...sm,
+                nodes: [...sm.nodes, retryNode],
+                edges: [...sm.edges, retryEdge],
+              }
+            )),
+        }));
+      },
+
       // ── Vision node branches (side-exit like DecisionNode) ────────────────
 
       addVisionBranches(smId, nodeId, passLabel, failLabel, ptFieldName) {
@@ -810,7 +906,8 @@ export const useDiagramStore = create(
         const label = conditionData?.label ?? 'Ready';
         const isDecExit = conditionData?.isDecisionExit === true;
         const isPass = conditionData?.exitColor === 'pass';
-        const decColor = isPass ? '#16a34a' : '#dc2626';
+        const isRetry = conditionData?.exitColor === 'retry';
+        const decColor = isRetry ? '#f59e0b' : isPass ? '#16a34a' : '#dc2626';
         const edge = {
           id,
           source: connection.source,
@@ -823,7 +920,7 @@ export const useDiagramStore = create(
           markerEnd: { type: 'ArrowClosed', color: isDecExit ? decColor : '#6b7280' },
           label,
           labelStyle: isDecExit
-            ? { fill: '#fff', fontWeight: 600, fontSize: 11 }
+            ? { fill: isRetry ? '#000' : '#fff', fontWeight: 600, fontSize: 11 }
             : { fill: '#374151', fontWeight: 500, fontSize: 9, fontFamily: 'Consolas, Menlo, Monaco, monospace', whiteSpace: 'pre-line', textAlign: 'left', lineHeight: '1.3' },
           labelBgStyle: isDecExit
             ? { fill: decColor, rx: 4, ry: 4 }
@@ -1493,9 +1590,60 @@ export const useDiagramStore = create(
 
         overrides[recipeId] = recipeOv;
         const recipes = (project.recipes ?? []).map(r =>
-          r.id === recipeId ? { ...r, customSequence: newCustom } : r
+          r.id === recipeId ? { ...r, customSequence: newCustom, sequenceVariantId: null } : r
         );
         set({ project: { ...project, recipes, recipeOverrides: overrides } });
+      },
+
+      /** Create a named sequence variant (deep-copies base SMs). */
+      createSequenceVariant(name) {
+        get()._pushHistory();
+        const { project } = get();
+        const id = uid();
+        const variant = {
+          id,
+          name,
+          stateMachines: JSON.parse(JSON.stringify(project.stateMachines)),
+        };
+        set({ project: { ...project, sequenceVariants: [...(project.sequenceVariants ?? []), variant] } });
+        return id;
+      },
+
+      /** Delete a sequence variant and unlink any recipes that used it. */
+      deleteSequenceVariant(variantId) {
+        get()._pushHistory();
+        const { project } = get();
+        const variants = (project.sequenceVariants ?? []).filter(v => v.id !== variantId);
+        const recipes = (project.recipes ?? []).map(r =>
+          r.sequenceVariantId === variantId ? { ...r, sequenceVariantId: null, customSequence: false } : r
+        );
+        set({ project: { ...project, sequenceVariants: variants, recipes } });
+      },
+
+      /** Rename a sequence variant. */
+      renameSequenceVariant(variantId, name) {
+        get()._pushHistory();
+        set(s => ({
+          project: {
+            ...s.project,
+            sequenceVariants: (s.project.sequenceVariants ?? []).map(v =>
+              v.id === variantId ? { ...v, name } : v
+            ),
+          },
+        }));
+      },
+
+      /** Assign a recipe to a named sequence variant (or null for base). */
+      setRecipeSequenceVariant(recipeId, variantId) {
+        get()._pushHistory();
+        set(s => ({
+          project: {
+            ...s.project,
+            recipes: (s.project.recipes ?? []).map(r =>
+              r.id === recipeId ? { ...r, sequenceVariantId: variantId || null, customSequence: !!variantId } : r
+            ),
+          },
+        }));
       },
 
       // Recipe override mutations
@@ -1562,21 +1710,19 @@ export const useDiagramStore = create(
       /** Save current project to its file on the server. */
       async saveCurrentProject() {
         let { currentFilename, project, serverAvailable, activeSmId } = get();
-        // Re-check availability in case it started after page load
-        if (!serverAvailable) {
-          const available = await projectApi.isServerAvailable();
-          if (!available) throw new Error('No save server available. Use the Download button to save your project as a local file.');
-          set({ serverAvailable: true });
-          serverAvailable = true;
-        }
+        if (!serverAvailable) return;
         // If no filename yet, derive one from the project name and persist it
         if (!currentFilename) {
           currentFilename = projectApi.toFilename(project.name || 'New Project');
           set({ currentFilename });
         }
-        // Persist the last-active SM so we can restore it when switching back
-        const dataToSave = { ...project, _lastActiveSmId: activeSmId };
-        await projectApi.saveProject(currentFilename, dataToSave);
+        try {
+          // Persist the last-active SM so we can restore it when switching back
+          const dataToSave = { ...project, _lastActiveSmId: activeSmId };
+          await projectApi.saveProject(currentFilename, dataToSave);
+        } catch (err) {
+          console.error('Auto-save failed:', err);
+        }
       },
 
       /** Switch to a different project. Saves current first. */
@@ -1619,18 +1765,8 @@ export const useDiagramStore = create(
       async createNewProject(name) {
         const { currentFilename, project, serverAvailable, activeSmId } = get();
 
-        // Cloud / offline mode: create project in memory without saving to server
         if (!serverAvailable) {
-          const newProject = { name: name || 'New Project', stateMachines: [], partTracking: { fields: [] }, signals: [] };
-          set({
-            project: newProject,
-            currentFilename: null,
-            activeSmId: null,
-            selectedNodeId: null,
-            selectedEdgeId: null,
-            showProjectManager: false,
-            showNewSmModal: true,
-          });
+          alert('Project server is not running.\n\nMake sure you launched the app with START_APP.bat\n(it starts both the API server and the dev server).');
           return;
         }
 
