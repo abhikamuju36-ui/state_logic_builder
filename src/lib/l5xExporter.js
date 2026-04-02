@@ -2610,6 +2610,7 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
 
   const dataTypes = generateDataTypes(hasServos, trackingFields);
   const aoi = generateAOI(needsRangeCheck);
+  const contextPrograms = generateCrossSmContextPrograms(sm, allSMs);
 
   const now = new Date().toUTCString();
   const stationDesc = `S${String(sm.stationNumber ?? 0).padStart(2, '0')} ${sm.description ?? sm.name ?? ''}`;
