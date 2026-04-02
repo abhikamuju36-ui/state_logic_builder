@@ -3,11 +3,11 @@
  *
  * Generates L5X matching CE's Studio 5000 output:
  *  - State_Engine_128Max AOI with StateLogicControl / StateLogicStatus UDTs
- *  - Steps numbered by 3s starting at 10 (10, 13, 16, 19, …)
- *  - Auto-generated Wait (state 10) and Complete bookend states
+ *  - Steps numbered by 3s starting at 1 (1, 4, 7, 10, …)
+ *  - Auto-generated Wait (state 1) and Complete bookend states
  *  - R00_Main       — 3 JSR calls
  *  - R01_Inputs     — inverted-sensor → delay timer (1-sensor devices only)
- *  - R02_StateTransitions — XIC(Status.State[N]) + verify conditions + MOVE + AOI call
+ *  - R02_StateTransitions — XIC(Status.State[N]) + verify conditions + MOV + AOI call
  *  - R03_StateLogic — OTE branch/latch per device, complementary outputs
  *  - No R04/R20     — fault detection via AOI FaultTime
  *
