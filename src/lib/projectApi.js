@@ -1,16 +1,23 @@
 /**
- * Project API — fetch wrapper for the server's REST endpoints.
+ * Project API — localStorage-based storage.
  *
- * Endpoints:
- *   GET    /api/projects              → list all projects
- *   GET    /api/projects/:filename    → load a project
- *   POST   /api/projects/:filename    → save/overwrite a project
- *   DELETE /api/projects/:filename    → delete a project
+ * Drop-in replacement for the server-based API.
+ * Works in any static hosting environment (Cloudflare Pages, GitHub Pages, etc.)
+ * Projects are saved in the browser's localStorage under the key prefix "sdc-proj-".
+ *
+ * Same interface as the original server API:
+ *   listProjects()                   → [{ filename, name, lastModified, smCount }]
+ *   loadProject(filename)            → project object
+ *   saveProject(filename, data)      → { ok: true }
+ *   deleteProjectFile(filename)      → { ok: true }
+ *   isServerAvailable()              → true (always — no server needed)
+ *   toFilename(name)                 → 'My_Project.json'
  */
 
-const API_BASE = '/api/projects';
+const PROJ_PREFIX = 'sdc-proj-';
+const INDEX_KEY   = 'sdc-proj-index';
 
-/** Convert a project name to a safe filename. */
+/** Convert a project name to a safe filename key. */
 export function toFilename(name) {
   const safe = (name || 'project')
     .replace(/[^a-zA-Z0-9_\- ]/g, '')
@@ -20,54 +27,69 @@ export function toFilename(name) {
   return (safe || 'project') + '.json';
 }
 
-/** List all projects on the server. Returns [{ filename, name, lastModified, smCount }]. */
-export async function listProjects() {
-  const res = await fetch(API_BASE);
-  if (!res.ok) throw new Error(`Failed to list projects: ${res.status}`);
-  return res.json();
-}
-
-/** Load a project file from the server. Returns the parsed project object. */
-export async function loadProject(filename) {
-  const res = await fetch(`${API_BASE}/${encodeURIComponent(filename)}`);
-  if (!res.ok) throw new Error(`Failed to load project: ${res.status}`);
-  return res.json();
-}
-
-/** Save a project to the server. Creates or overwrites the file. */
-export async function saveProject(filename, projectData) {
-  const res = await fetch(`${API_BASE}/${encodeURIComponent(filename)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(projectData, null, 2),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Failed to save project: ${res.status}`);
-  }
-  return res.json();
-}
-
-/** Delete a project file from the server. */
-export async function deleteProjectFile(filename) {
-  const res = await fetch(`${API_BASE}/${encodeURIComponent(filename)}`, {
-    method: 'DELETE',
-  });
-  if (!res.ok) throw new Error(`Failed to delete project: ${res.status}`);
-  return res.json();
-}
-
-/** Check if the project API server is available.
- *  Verifies the response is real JSON (not the SPA HTML fallback from Cloudflare Pages). */
-export async function isServerAvailable() {
+/** Read the filename→metadata index from localStorage. */
+function readIndex() {
   try {
-    const res = await fetch(API_BASE, { method: 'GET' });
-    if (!res.ok) return false;
-    // Cloudflare Pages SPA fallback returns text/html with 200 — that is NOT our API.
-    // Only treat the server as available when the response is actually JSON.
-    const contentType = res.headers.get('content-type') || '';
-    return contentType.includes('application/json');
+    return JSON.parse(localStorage.getItem(INDEX_KEY) || '{}');
   } catch {
-    return false;
+    return {};
   }
+}
+
+/** Write the index back to localStorage. */
+function writeIndex(index) {
+  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+}
+
+/** List all saved projects. Returns [{ filename, name, lastModified, smCount }]. */
+export async function listProjects() {
+  const index = readIndex();
+  return Object.entries(index).map(([filename, meta]) => ({
+    filename,
+    name: meta.name || filename.replace(/\.json$/, ''),
+    lastModified: meta.lastModified || 0,
+    smCount: meta.smCount || 0,
+  }));
+}
+
+/** Load a project by filename. Returns the parsed project object. */
+export async function loadProject(filename) {
+  const raw = localStorage.getItem(PROJ_PREFIX + filename);
+  if (!raw) throw new Error(`Project not found: ${filename}`);
+  return JSON.parse(raw);
+}
+
+/** Save (create or overwrite) a project. */
+export async function saveProject(filename, projectData) {
+  localStorage.setItem(PROJ_PREFIX + filename, JSON.stringify(projectData));
+
+  // Update the index with fresh metadata
+  const index = readIndex();
+  index[filename] = {
+    name: projectData.name || filename.replace(/\.json$/, ''),
+    lastModified: Date.now(),
+    smCount: (projectData.stateMachines ?? []).length,
+  };
+  writeIndex(index);
+
+  return { ok: true };
+}
+
+/** Delete a project file. */
+export async function deleteProjectFile(filename) {
+  localStorage.removeItem(PROJ_PREFIX + filename);
+
+  const index = readIndex();
+  delete index[filename];
+  writeIndex(index);
+
+  return { ok: true };
+}
+
+/**
+ * Always returns true — no server needed for localStorage storage.
+ * This prevents the "Project server not running" warning from ever showing.
+ */
+export async function isServerAvailable() {
+  return true;
 }

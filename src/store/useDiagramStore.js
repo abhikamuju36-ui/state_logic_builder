@@ -87,7 +87,7 @@ export const useDiagramStore = create(
       project: defaultProject,
       activeSmId: null,
       currentFilename: null,   // filename of the active project on the server
-      serverAvailable: false,  // true when the project API server is detected
+      serverAvailable: true,   // always true — projects stored in localStorage
 
       // ── Recipe state ──────────────────────────────────────────────────────
       activeRecipeId: null,
@@ -1707,10 +1707,9 @@ export const useDiagramStore = create(
       openProjectManager()  { set({ showProjectManager: true }); },
       closeProjectManager() { set({ showProjectManager: false }); },
 
-      /** Save current project to its file on the server. */
+      /** Save current project to localStorage. */
       async saveCurrentProject() {
-        let { currentFilename, project, serverAvailable, activeSmId } = get();
-        if (!serverAvailable) return;
+        let { currentFilename, project, activeSmId } = get();
         // If no filename yet, derive one from the project name and persist it
         if (!currentFilename) {
           currentFilename = projectApi.toFilename(project.name || 'New Project');
@@ -1727,8 +1726,7 @@ export const useDiagramStore = create(
 
       /** Switch to a different project. Saves current first. */
       async switchProject(filename) {
-        const { currentFilename, project, serverAvailable, activeSmId } = get();
-        if (!serverAvailable) return;
+        const { currentFilename, project, activeSmId } = get();
 
         // Save current project before switching (preserves last-active SM)
         if (currentFilename) {
@@ -1763,12 +1761,7 @@ export const useDiagramStore = create(
 
       /** Create a brand new project and switch to it. */
       async createNewProject(name) {
-        const { currentFilename, project, serverAvailable, activeSmId } = get();
-
-        if (!serverAvailable) {
-          alert('Project server is not running.\n\nMake sure you launched the app with START_APP.bat\n(it starts both the API server and the dev server).');
-          return;
-        }
+        const { currentFilename, project, activeSmId } = get();
 
         const filename = projectApi.toFilename(name);
 
@@ -1815,10 +1808,9 @@ export const useDiagramStore = create(
         }
       },
 
-      /** Delete a project from the server. Switches away if it's the current one. */
+      /** Delete a project. Switches away if it's the current one. */
       async deleteProjectFile(filename) {
-        const { currentFilename, serverAvailable } = get();
-        if (!serverAvailable) return;
+        const { currentFilename } = get();
 
         try {
           await projectApi.deleteProjectFile(filename);
@@ -1844,8 +1836,7 @@ export const useDiagramStore = create(
 
       /** Rename a project (save with new filename, delete old). */
       async renameProject(oldFilename, newName) {
-        const { currentFilename, serverAvailable } = get();
-        if (!serverAvailable) return;
+        const { currentFilename } = get();
 
         const newFilename = projectApi.toFilename(newName);
         if (newFilename === oldFilename) {
@@ -1886,14 +1877,9 @@ export const useDiagramStore = create(
         }
       },
 
-      /** Import a JSON project as a new file on the server, then switch to it. */
+      /** Import a JSON project, save it to localStorage, then switch to it. */
       async importProject(projectData) {
-        const { currentFilename, project, serverAvailable, activeSmId } = get();
-        if (!serverAvailable) {
-          // Fallback: just load into memory (old behavior)
-          get().loadProject(projectData);
-          return;
-        }
+        const { currentFilename, project, activeSmId } = get();
 
         // Save current project first (preserve last-active SM)
         if (currentFilename) {
@@ -1928,9 +1914,7 @@ export const useDiagramStore = create(
 
       /** Bootstrap: detect server, load or create initial project. */
       async initializeProjects() {
-        const available = await projectApi.isServerAvailable();
-        set({ serverAvailable: available });
-        if (!available) return;
+        set({ serverAvailable: true });
 
         /** Restore _lastActiveSmId from project data (or fall back to first SM). */
         function pickActiveSmId(data) {
