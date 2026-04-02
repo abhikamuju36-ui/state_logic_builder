@@ -300,12 +300,14 @@ export const DEVICE_TYPES = {
       { value: 'ReadValue', label: 'Read Value', verb: 'ReadValue', icon: '📏' },
     ],
     tagPatterns: {
-      inputTag:     'i_{name}',
-      scaledTag:    '{name}Scaled',
-      highLimit:    '{name}HighLim',
-      lowLimit:     '{name}LowLim',
-      inRangeTag:   '{name}RC.In_Range',
-      debounce:     '{name}Debounce',
+      inputTag:       'i_{name}',
+      scaledTag:      '{name}Scaled',
+      highLimit:      '{name}HighLim',
+      lowLimit:       '{name}LowLim',
+      inRangeTag:     '{name}RC.In_Range',
+      debounce:       '{name}Debounce',
+      rangeCheckInst: '{name}{setpointName}RC',
+      setpointParam:  'p_{name}{setpointName}',
     },
     defaultTimerPreMs: 10,
     // Setpoints are user-defined per device instance (stored in device.setpoints[])
@@ -340,6 +342,7 @@ export const DEVICE_TYPES = {
       inspPass:         'i_{name}InspPass',
       waitTimer:        '{name}WaitTimer',
       trigDwell:        '{name}TrigDwell',
+      searchTimeout:    '{name}SearchTimeout',
       jobOutcome:       'q_Pass_{jobName}',   // per-job pass/fail params
     },
     defaultTimerPreMs: 50,

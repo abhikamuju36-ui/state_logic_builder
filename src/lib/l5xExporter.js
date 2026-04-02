@@ -880,8 +880,8 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
 
       case 'VisionSystem': {
         const vp = DEVICE_TYPES.VisionSystem.tagPatterns;
-        const trigReadyTag = vp.triggerReady.replace(/\{name\}/g, device.name);
-        const triggerTag   = vp.trigger.replace(/\{name\}/g, device.name);
+        const trigReadyTag = vp.trigReady.replace(/\{name\}/g, device.name);
+        const triggerTag   = vp.triggerOutput.replace(/\{name\}/g, device.name);
         const waitTimerTag = vp.waitTimer.replace(/\{name\}/g, device.name);
         const trigDwellTag = vp.trigDwell.replace(/\{name\}/g, device.name);
 
@@ -1294,7 +1294,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
     buildRung(
       rungNum++,
       `State ${waitStep}: Wait For Ready`,
-      `XIC(Status.State[${completeStep}])MOVE(${waitStep},Control.StateReg);`
+      `XIC(Status.State[${completeStep}])MOV(${waitStep},Control.StateReg);`
     )
   );
 
@@ -1306,7 +1306,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
       buildRung(
         rungNum++,
         `State ${firstStep}: ${getStateDescription(orderedNodes[0], devices)}`,
-        `XIC(Status.State[${waitStep}])${homeConditions}MOVE(${firstStep},Control.StateReg);`
+        `XIC(Status.State[${waitStep}])${homeConditions}MOV(${firstStep},Control.StateReg);`
       )
     );
   }
@@ -1401,7 +1401,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${faultStep}: FAULT — ${outcomeLabel} retries exceeded`,
-              `XIC(Status.State[${srcStep}])${branchCond}GEQ(${counterTag},${maxTag})MOVE(${faultStep},Control.StateReg);`
+              `XIC(Status.State[${srcStep}])${branchCond}GEQ(${counterTag},${maxTag})MOV(${faultStep},Control.StateReg);`
             )
           );
           // Rung 2: condition met AND counter < max → increment + go to recovery path
@@ -1409,7 +1409,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${tgtStep}: ${desc} [${outcomeLabel}] (retry)`,
-              `XIC(Status.State[${srcStep}])${branchCond}LES(${counterTag},${maxTag})[ADD(${counterTag},1,${counterTag}),MOVE(${tgtStep},Control.StateReg)];`
+              `XIC(Status.State[${srcStep}])${branchCond}LES(${counterTag},${maxTag})[ADD(${counterTag},1,${counterTag}),MOV(${tgtStep},Control.StateReg)];`
             )
           );
         } else {
@@ -1419,7 +1419,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             for (const sib of outcomes) {
               if (sib.retry && sib.id !== outcome?.id) {
                 const sibCounter = `${checkDevice.name}_${sib.id}_RetryCnt`;
-                resetRungs += `MOVE(0,${sibCounter})`;
+                resetRungs += `MOV(0,${sibCounter})`;
               }
             }
           }
@@ -1428,7 +1428,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${tgtStep}: ${desc} [${outcomeLabel}]`,
-              `XIC(Status.State[${srcStep}])${branchCond}${resetRungs}MOVE(${tgtStep},Control.StateReg);`
+              `XIC(Status.State[${srcStep}])${branchCond}${resetRungs}MOV(${tgtStep},Control.StateReg);`
             )
           );
         }
@@ -1447,7 +1447,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
         const visionDevice = visionAction ? devices.find(d => d.id === visionAction.deviceId) : null;
 
         if (visionDevice) {
-          const trigReadyTag  = DEVICE_TYPES.VisionSystem.tagPatterns.triggerReady.replace(/\{name\}/g, visionDevice.name);
+          const trigReadyTag  = DEVICE_TYPES.VisionSystem.tagPatterns.trigReady.replace(/\{name\}/g, visionDevice.name);
           const waitTimerTag  = DEVICE_TYPES.VisionSystem.tagPatterns.waitTimer.replace(/\{name\}/g, visionDevice.name);
           const trigDwellTag  = DEVICE_TYPES.VisionSystem.tagPatterns.trigDwell.replace(/\{name\}/g, visionDevice.name);
           const resultReadyTag = DEVICE_TYPES.VisionSystem.tagPatterns.resultReady.replace(/\{name\}/g, visionDevice.name);
@@ -1457,7 +1457,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${visionSubs[1]}: ${visionDevice.displayName} - Wait Timer`,
-              `XIC(Status.State[${visionSubs[0]}])XIC(${trigReadyTag})MOVE(${visionSubs[1]},Control.StateReg);`
+              `XIC(Status.State[${visionSubs[0]}])XIC(${trigReadyTag})MOV(${visionSubs[1]},Control.StateReg);`
             )
           );
 
@@ -1467,7 +1467,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${visionSubs[2]}: ${visionDevice.displayName} - Trigger`,
-              `XIC(Status.State[${visionSubs[1]}])TON(${waitTimerTag},?,?)XIC(${waitTimerTag}.DN)MOVE(${visionSubs[2]},Control.StateReg);`
+              `XIC(Status.State[${visionSubs[1]}])TON(${waitTimerTag},?,?)XIC(${waitTimerTag}.DN)MOV(${visionSubs[2]},Control.StateReg);`
             )
           );
 
@@ -1477,7 +1477,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
             buildRung(
               rungNum++,
               `State ${visionSubs[3]}: ${visionDevice.displayName} - Check Results`,
-              `XIC(Status.State[${visionSubs[2]}])TON(${trigDwellTag},?,?)XIC(${trigDwellTag}.DN)XIC(${resultReadyTag})MOVE(${visionSubs[3]},Control.StateReg);`
+              `XIC(Status.State[${visionSubs[2]}])TON(${trigDwellTag},?,?)XIC(${trigDwellTag}.DN)XIC(${resultReadyTag})MOV(${visionSubs[3]},Control.StateReg);`
             )
           );
 
@@ -1511,7 +1511,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
                 buildRung(
                   rungNum++,
                   `State ${tgtStep}: ${desc} [${outcomeLabel}]`,
-                  `XIC(Status.State[${visionSubs[3]}])${inspCond}MOVE(${tgtStep},Control.StateReg);`
+                  `XIC(Status.State[${visionSubs[3]}])${inspCond}MOV(${tgtStep},Control.StateReg);`
                 )
               );
             }
@@ -1526,7 +1526,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
                 buildRung(
                   rungNum++,
                   `${visionDevice.displayName} - Search Loop (no match → re-trigger)`,
-                  `XIC(Status.State[${visionSubs[3]}])MOVE(${visionSubs[0]},Control.StateReg);`
+                  `XIC(Status.State[${visionSubs[3]}])MOV(${visionSubs[0]},Control.StateReg);`
                 )
               );
 
@@ -1535,7 +1535,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
                 buildRung(
                   rungNum++,
                   `${visionDevice.displayName} - Search Timeout → Fault`,
-                  `XIC(Status.State[${visionSubs[0]}])TON(${searchTimeoutTag},?,?)XIC(${searchTimeoutTag}.DN)MOVE(127,Control.StateReg);`
+                  `XIC(Status.State[${visionSubs[0]}])TON(${searchTimeoutTag},?,?)XIC(${searchTimeoutTag}.DN)MOV(127,Control.StateReg);`
                 )
               );
             }
@@ -1549,7 +1549,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
                 buildRung(
                   rungNum++,
                   `State ${tgtStep}: ${desc}`,
-                  `XIC(Status.State[${visionSubs[3]}])MOVE(${tgtStep},Control.StateReg);`
+                  `XIC(Status.State[${visionSubs[3]}])MOV(${tgtStep},Control.StateReg);`
                 )
               );
             }
@@ -1566,7 +1566,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
           buildRung(
             rungNum++,
             `State ${tgtStep}: ${desc}`,
-            `XIC(Status.State[${srcStep}])${conditions}MOVE(${tgtStep},Control.StateReg);`
+            `XIC(Status.State[${srcStep}])${conditions}MOV(${tgtStep},Control.StateReg);`
           )
         );
       }
@@ -1596,7 +1596,7 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
         buildRung(
           rungNum++,
           `State ${completeStep}: Complete`,
-          `XIC(Status.State[${effectiveLastStep}])${conditions}MOVE(${completeStep},Control.StateReg);`
+          `XIC(Status.State[${effectiveLastStep}])${conditions}MOV(${completeStep},Control.StateReg);`
         )
       );
     }
@@ -1875,15 +1875,15 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
         const moveBranches = moves.map(m => {
           if (m.operation === 'ServoIncr') {
             const incrTag = sp.incrementParam.replace(/\{name\}/g, device.name);
-            return `XIC(Status.State[${m.step}]) [MOVE(${incrTag},${motionParamTag}.Position) ,MOVE(1,${motionParamTag}.MoveType) ]`;
+            return `XIC(Status.State[${m.step}]) [MOV(${incrTag},${motionParamTag}.Position) ,MOV(1,${motionParamTag}.MoveType) ]`;
           } else if (m.operation === 'ServoIndex') {
             const indexTag = sp.indexAngleParam.replace(/\{name\}/g, device.name);
-            return `XIC(Status.State[${m.step}]) [MOVE(${indexTag},${motionParamTag}.Position) ,MOVE(1,${motionParamTag}.MoveType) ]`;
+            return `XIC(Status.State[${m.step}]) [MOV(${indexTag},${motionParamTag}.Position) ,MOV(1,${motionParamTag}.MoveType) ]`;
           } else {
             const posTag = sp.positionParam
               .replace(/\{name\}/g, device.name)
               .replace(/\{positionName\}/g, m.positionName);
-            return `XIC(Status.State[${m.step}]) [MOVE(${posTag},${motionParamTag}.Position) ,MOVE(0,${motionParamTag}.MoveType) ]`;
+            return `XIC(Status.State[${m.step}]) [MOV(${posTag},${motionParamTag}.Position) ,MOV(0,${motionParamTag}.MoveType) ]`;
           }
         });
         rungs.push(
@@ -1974,7 +1974,7 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
       const visionSubs = getVisionSubSteps(node, devices, stepMap);
       if (!visionSubs) continue;
 
-      const triggerTag = DEVICE_TYPES.VisionSystem.tagPatterns.trigger.replace(/\{name\}/g, device.name);
+      const triggerTag = DEVICE_TYPES.VisionSystem.tagPatterns.triggerOutput.replace(/\{name\}/g, device.name);
 
       // Trigger fires during sub-state [2] (Trigger)
       rungs.push(
