@@ -212,7 +212,11 @@ export const DEVICE_TYPES = {
     tagPatterns: {
       axisTag:          'a{axisNum}_{name}',
       positionParam:    'p_{name}{positionName}',
+      positionRC:       '{name}{positionName}RC',
       mamControl:       'MAM_{name}',
+      motionParam:      '{name}MotionParam',
+      incrementParam:   'p_{name}IncrDist',
+      indexAngleParam:  'p_{name}IndexAngle',
       oneShotTag:       '{name}_Step{step}_OS',
     },
     defaultTimerPreMs: 0,
