@@ -212,11 +212,7 @@ export const DEVICE_TYPES = {
     tagPatterns: {
       axisTag:          'a{axisNum}_{name}',
       positionParam:    'p_{name}{positionName}',
-      positionRC:       '{name}{positionName}RC',
       mamControl:       'MAM_{name}',
-      motionParam:      'MAMParam_{name}',
-      incrementParam:   'p_{name}Incr',
-      indexAngleParam:  'p_{name}IndexAngle',
       oneShotTag:       '{name}_Step{step}_OS',
     },
     defaultTimerPreMs: 0,
@@ -308,6 +304,8 @@ export const DEVICE_TYPES = {
       debounce:     '{name}Debounce',
     },
     defaultTimerPreMs: 10,
+    // Setpoints are user-defined per device instance (stored in device.setpoints[])
+    // Each setpoint: { name, nominal, tolerance, lowLimit, highLimit }
     transitionConditions: {
       CheckRange: {
         type: 'analogRange',
@@ -332,13 +330,12 @@ export const DEVICE_TYPES = {
       { value: 'Trigger', label: 'Trigger Inspection', verb: 'Trigger', icon: '📷' },
     ],
     tagPatterns: {
-      trigger:          'q_Trigger{name}',
-      triggerReady:     'i_{name}TrigRdy',
+      triggerOutput:    'q_Trigger{name}',
+      trigReady:        'i_{name}TrigRdy',
       resultReady:      'i_{name}ResultReady',
       inspPass:         'i_{name}InspPass',
       waitTimer:        '{name}WaitTimer',
       trigDwell:        '{name}TrigDwell',
-      searchTimeout:    '{name}SearchTimeout',
       jobOutcome:       'q_Pass_{jobName}',   // per-job pass/fail params
     },
     defaultTimerPreMs: 50,
@@ -385,6 +382,56 @@ export const DEVICE_TYPES = {
       // SetOn / SetOff / SetValue do not produce a verify transition condition.
     },
   },
+
+  Robot: {
+    label: 'Robot',
+    icon: '🤖',
+    color: '#7c3aed',
+    colorBg: '#f3eaff',
+    sides: 6,
+    category: 'Robot',
+    operations: [],
+    tagPatterns: {},
+    defaultTimerPreMs: 0,
+    transitionConditions: {},
+    // Signals are user-defined per device instance (stored in device.signals[])
+    // Each signal: { id, name, direction: 'input'|'output', dataType: 'BOOL'|'DINT'|'REAL', description }
+  },
+
+  Conveyor: {
+    label: 'Conveyor',
+    icon: '🔄',
+    color: '#0891b2',
+    colorBg: '#ecfeff',
+    sides: 8,
+    category: 'Conveyor',
+    operations: [
+      { value: 'Run', label: 'Run Conveyor', verb: 'Run', icon: '▶' },
+      { value: 'Stop', label: 'Stop Conveyor', verb: 'Stop', icon: '⏹' },
+    ],
+    homePositions: [
+      { value: 'Stop', label: 'Stopped' },
+      { value: 'Run', label: 'Running' },
+    ],
+    defaultHomePosition: 'Stop',
+    tagPatterns: {
+      outputRun:   'q_Run{name}',
+      outputStop:  'q_Stop{name}',
+      outputFwd:   'q_Fwd{name}',
+      speedParam:  'p_{name}Speed',
+    },
+    defaultTimerPreMs: 0,
+    transitionConditions: {
+      Run: {
+        type: 'immediate',
+        labelTemplate: "'{deviceName}' Running",
+      },
+      Stop: {
+        type: 'immediate',
+        labelTemplate: "'{deviceName}' Stopped",
+      },
+    },
+  },
 };
 
 export const DEVICE_CATEGORIES = {
@@ -392,6 +439,8 @@ export const DEVICE_CATEGORIES = {
   Servo: ['ServoAxis'],
   Logic: ['Timer', 'Parameter'],
   Sensor: ['DigitalSensor', 'AnalogSensor', 'VisionSystem'],
+  Robot: ['Robot'],
+  Conveyor: ['Conveyor'],
 };
 
 /**

@@ -108,24 +108,12 @@ function resolveInputRefTag(inputRef, devices, allSMs = [], trackingFields = [])
 
 const SCHEMA_REV = '1.0';
 const SOFTWARE_REV = '37.00';
-const STEP_BASE = 10;         // Wait/Home state = 10 (SDC standard: steps start at 10, 13, 16, …)
-const STEP_INCREMENT = 3;     // First action = 13, then 16, 19, …
+const STEP_BASE = 1;          // Wait/Home state = 1
+const STEP_INCREMENT = 3;     // First action = 4, then 7, 10, 13, …
 const DEFAULT_FAULT_TIME = 5000;
 const CONTROLLER_NAME = 'SDCController';
 
 // ── Date helper (Studio 5000 expects C ctime format: "Mon Dec 15 15:57:26 2025") ──────────
-
-function toCTimeString(date) {
-  const DAYS   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const pad2 = n => String(n).padStart(2, '0');
-  // ctime pads single-digit day with a space: " 5" vs "15"
-  const day = String(date.getDate()).padStart(2, ' ');
-  return `${DAYS[date.getDay()]} ${MONTHS[date.getMonth()]} ${day} ` +
-         `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())} ` +
-         `${date.getFullYear()}`;
-}
 
 // ── XML helpers ──────────────────────────────────────────────────────────────
 
@@ -183,19 +171,20 @@ function orderNodes(nodes, edges) {
 
 function buildStepMap(orderedNodes, devices) {
   const map = {};
-  let currentStep = STEP_BASE; // starts at 10 (wait state)
+  let currentStep = STEP_BASE; // starts at 1 (wait state)
 
   orderedNodes.forEach((n) => {
     currentStep += STEP_INCREMENT;
     map[n.id] = currentStep;
 
-    // VisionSystem Inspect nodes consume 4 sub-states (N, N+3, N+6, N+9)
+    // VisionSystem Inspect nodes consume 5 sub-states (N, N+3, N+6, N+9, N+12)
+    // Sub-state 5 (N+12) is reserved for future Part Tracking update rung.
     const hasVisionInspect = (n.data?.actions ?? []).some(a => {
       const dev = (devices ?? []).find(d => d.id === a.deviceId);
       return dev?.type === 'VisionSystem' && (a.operation === 'Inspect' || a.operation === 'VisionInspect');
     });
     if (hasVisionInspect) {
-      currentStep += STEP_INCREMENT * 3; // consumed 3 extra slots (4 total sub-states)
+      currentStep += STEP_INCREMENT * 4; // consumed 4 extra slots (5 total sub-states)
     }
   });
 
@@ -211,11 +200,11 @@ function getVisionSubSteps(node, devices, stepMap) {
     return dev?.type === 'VisionSystem' && (a.operation === 'Inspect' || a.operation === 'VisionInspect');
   });
   if (!hasVisionInspect) return null;
-  return [baseStep, baseStep + STEP_INCREMENT, baseStep + STEP_INCREMENT * 2, baseStep + STEP_INCREMENT * 3];
+  return [baseStep, baseStep + STEP_INCREMENT, baseStep + STEP_INCREMENT * 2, baseStep + STEP_INCREMENT * 3, baseStep + STEP_INCREMENT * 4];
 }
 
 function getWaitStep() {
-  return STEP_BASE; // always 10
+  return STEP_BASE; // always 1
 }
 
 function getCompleteStep(orderedNodes, devices) {
@@ -226,7 +215,7 @@ function getCompleteStep(orderedNodes, devices) {
       const dev = (devices ?? []).find(d => d.id === a.deviceId);
       return dev?.type === 'VisionSystem' && (a.operation === 'Inspect' || a.operation === 'VisionInspect');
     });
-    if (hasVisionInspect) totalSlots += 3; // 3 extra sub-state slots (4 total sub-states)
+    if (hasVisionInspect) totalSlots += 4; // 4 extra sub-state slots (5 total sub-states)
   }
   return STEP_BASE + STEP_INCREMENT * (totalSlots + 1);
 }
@@ -2622,10 +2611,7 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
   const dataTypes = generateDataTypes(hasServos, trackingFields);
   const aoi = generateAOI(needsRangeCheck);
 
-  // Context program blocks for cross-SM tag references
-  const contextPrograms = generateCrossSmContextPrograms(sm, allSMs);
-
-  const now = toCTimeString(new Date());
+  const now = new Date().toUTCString();
   const stationDesc = `S${String(sm.stationNumber ?? 0).padStart(2, '0')} ${sm.description ?? sm.name ?? ''}`;
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

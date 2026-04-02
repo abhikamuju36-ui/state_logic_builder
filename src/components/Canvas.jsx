@@ -143,21 +143,29 @@ export function Canvas() {
   const store = useDiagramStore();
   const sm = store.getActiveSm();
   const reactFlowWrapper = useRef(null);
-  const { screenToFlowPosition, setCenter, getViewport, fitView } = useReactFlow();
+  const { screenToFlowPosition, setCenter, getViewport, setViewport, fitView } = useReactFlow();
   const [selectMode, setSelectMode] = useState(false);
   const prevSmIdRef = useRef(null);
 
   // ── Viewport persistence per SM ──────────────────────────────────────────
+  // Save viewport when switching away from an SM, restore when switching to one
   useEffect(() => {
     const currentSmId = sm?.id;
     const prevSmId = prevSmIdRef.current;
 
+    // Save previous SM's viewport before switching
     if (prevSmId && prevSmId !== currentSmId) {
       try { smViewports[prevSmId] = getViewport(); } catch (_) { /* not mounted yet */ }
     }
 
     if (currentSmId && currentSmId !== prevSmId) {
-      setTimeout(() => fitView({ padding: 0.2, duration: 250, maxZoom: 1 }), 50);
+      if (smViewports[currentSmId]) {
+        // Restore saved viewport for this SM
+        setTimeout(() => setViewport(smViewports[currentSmId], { duration: 200 }), 50);
+      } else {
+        // Always fitView when switching to a new SM — show the whole sequence
+        setTimeout(() => fitView({ padding: 0.2, duration: 250, maxZoom: 1 }), 50);
+      }
     }
 
     prevSmIdRef.current = currentSmId;
@@ -451,10 +459,9 @@ export function Canvas() {
       edgeCond.manualRoute = true;
     }
     const edgeId = store.addEdge(sm.id, connection, edgeCond);
-    // Don't open transition modal for decision exit edges — they're auto-configured
+    // Don't select decision exit edges — they're auto-configured
     if (!decExitData) {
       store.setSelectedEdge(edgeId);
-      store.openTransitionModal(edgeId);
     }
     // Clear drawing state
     useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
@@ -574,7 +581,6 @@ export function Canvas() {
 
     if (!decExitData && edgeId) {
       store.setSelectedEdge(edgeId);
-      store.openTransitionModal(edgeId);
     }
 
     useDiagramStore.setState({ _isDrawingConnection: false, _drawingWaypoints: [], _drawingSource: null });
@@ -601,7 +607,6 @@ export function Canvas() {
 
   const onEdgeDoubleClick = useCallback((event, edge) => {
     store.setSelectedEdge(edge.id);
-    store.openTransitionModal(edge.id);
   }, [store]);
 
   const onPaneClick = useCallback((event) => {

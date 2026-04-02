@@ -35,6 +35,9 @@ out/
 App Files/
 projects/
 
+# Reference/working folder — not part of the deployed app
+state logic diagram updated/
+
 # Binary / media files
 *.pptx
 *.jpg
