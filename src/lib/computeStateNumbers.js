@@ -17,12 +17,22 @@ export function computeStateNumbers(nodes, edges, devices) {
   // Find initial node
   const initial = nodes.find(n => n.data?.isInitial);
   if (!initial) {
-    // Fallback: just number by Y position
+    // Fallback: number by Y position, still tracking VisionInspect sub-steps
     const sorted = [...nodes].sort((a, b) => a.position.y - b.position.y);
     let step = 1;
     for (const n of sorted) {
       stateMap.set(n.id, step);
-      step += 3;
+      const actions = n.data?.actions ?? [];
+      const hasVisionInspect = actions.some(a => {
+        const dev = (devices ?? []).find(d => d.id === a.deviceId);
+        return dev?.type === 'VisionSystem' && (a.operation === 'Inspect' || a.operation === 'VisionInspect');
+      });
+      if (hasVisionInspect) {
+        visionSubStepsMap.set(n.id, [step, step + 3, step + 6, step + 9, step + 12]);
+        step += 15;
+      } else {
+        step += 3;
+      }
     }
     return { stateMap, visionSubStepsMap };
   }

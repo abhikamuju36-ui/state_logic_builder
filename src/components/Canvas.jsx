@@ -714,13 +714,14 @@ export function Canvas() {
         targetHandle = 'input';
       }
 
-      // Decision exit edges (pass/fail): colored label — exit-single is plain gray
+      // Decision exit edges (pass/fail/retry): colored label — exit-single is plain gray
       const isDecisionExit = e.data?.isDecisionExit === true && e.sourceHandle !== 'exit-single';
       if (isDecisionExit) {
         const isPass = e.data?.exitColor === 'pass';
+        const isRetry = e.data?.exitColor === 'retry';
         // Only force targetHandle='input' if targeting a decisionNode; stateNodes use default (null)
         const decTargetHandle = targetNode?.type === 'decisionNode' ? 'input' : (e.targetHandle ?? null);
-        const color = isPass ? '#16a34a' : '#dc2626';
+        const color = isRetry ? '#f59e0b' : isPass ? '#16a34a' : '#dc2626';
         return {
           ...e,
           targetHandle: decTargetHandle,

@@ -441,13 +441,14 @@ export const useDiagramStore = create(
        * No longer creates auto-vision Parameter devices.
        */
       syncVisionPartTracking(smId) {
-        const sm = get().project?.stateMachines?.find(s => s.id === smId);
+        const sm = _getSmArray(get()).find(s => s.id === smId);
         if (!sm) return;
 
         const visionDevices = (sm.devices ?? []).filter(d => d.type === 'VisionSystem');
         if (visionDevices.length === 0) return;
 
         const ptFields = get().project?.partTracking?.fields ?? [];
+        const toAdd = [];
 
         for (const vd of visionDevices) {
           for (const job of (vd.jobs ?? [])) {
@@ -455,15 +456,30 @@ export const useDiagramStore = create(
             if (!ptName) continue;
             const exists = ptFields.some(f => f.name === ptName && f._visionLinked);
             if (!exists) {
-              get().addTrackingField({
+              toAdd.push({
+                id: uid(),
                 name: ptName,
                 type: 'boolean',
+                dataType: 'boolean',
                 description: `Vision job result — auto-linked from ${vd.displayName ?? vd.name}`,
                 _visionLinked: true,
                 _visionDeviceId: vd.id,
               });
             }
           }
+        }
+
+        if (toAdd.length > 0) {
+          // Add all fields in a single set() call without pushing extra history entries
+          set(s => ({
+            project: {
+              ...s.project,
+              partTracking: {
+                ...s.project.partTracking,
+                fields: [...(s.project.partTracking?.fields ?? []), ...toAdd],
+              },
+            },
+          }));
         }
       },
 
@@ -635,8 +651,7 @@ export const useDiagramStore = create(
           labelStyle: { fill: '#fff', fontWeight: 600, fontSize: 11 },
           labelBgStyle: { fill: '#16a34a', rx: 4, ry: 4 },
           labelBgPadding: [4, 8],
-          // No outcomeLabel on single-exit — the wait condition is the node itself, no branch label needed
-          data: { conditionType: 'ready', label: exitLabel, isDecisionExit: true, exitColor: 'pass' },
+          data: { conditionType: 'ready', label: exitLabel, outcomeLabel: exitLabel, isDecisionExit: true, exitColor: 'pass' },
         };
 
         set(s => ({

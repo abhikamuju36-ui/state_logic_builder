@@ -720,8 +720,8 @@ export function DecisionNode({ data, selected, id }) {
             : rect.right + 8;
           const top = Math.min(rect.top, Math.max(0, window.innerHeight - POPUP_H));
           setPopupPos({ position: 'fixed', top, left, zIndex: 9999 });
+          setShowPopup(true);
         }
-        setShowPopup(true);
         // Clear the flag so it doesn't re-open
         if (smId) {
           store.updateNodeData(smId, id, { autoOpenPopup: false });
@@ -729,7 +729,7 @@ export function DecisionNode({ data, selected, id }) {
       }, 250);
       return () => clearTimeout(timer);
     }
-  }, [data.autoOpenPopup]);
+  }, [data.autoOpenPopup, smId, id, store]);
 
   // Right-click context menu state
   const [ctxMenu, setCtxMenu] = useState(null);

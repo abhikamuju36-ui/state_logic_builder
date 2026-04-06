@@ -91,11 +91,11 @@ export function HomePage({ onEnterEditor }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const loaded = JSON.parse(ev.target.result);
         if (!loaded.stateMachines) throw new Error('Invalid project file — missing stateMachines');
-        store.importProject(loaded);
+        await store.importProject(loaded);
         onEnterEditor();
       } catch (err) {
         alert('Failed to load project: ' + err.message);
@@ -111,11 +111,11 @@ export function HomePage({ onEnterEditor }) {
     const file = e.dataTransfer.files?.[0];
     if (!file || !file.name.endsWith('.json')) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const loaded = JSON.parse(ev.target.result);
         if (!loaded.stateMachines) throw new Error('Invalid project file');
-        store.importProject(loaded);
+        await store.importProject(loaded);
         onEnterEditor();
       } catch (err) {
         alert('Failed to load project: ' + err.message);

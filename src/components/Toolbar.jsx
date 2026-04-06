@@ -238,26 +238,28 @@ export function Toolbar({ onGoHome }) {
 
         {smDropdownOpen && (
           <div className="toolbar__sm-dropdown">
-            {sms.map((s, i) => (
-              <div
-                key={s.id}
-                className={`toolbar__sm-item${s.id === activeSmId ? ' toolbar__sm-item--active' : ''}`}
-                onClick={() => { store.setActiveSm(s.id); setSmDropdownOpen(false); }}
-              >
-                <span className="toolbar__sm-item-station">S{String(s.stationNumber).padStart(2, '0')}</span>
-                <span className="toolbar__sm-item-name">{s.displayName ?? s.name}</span>
-                <button
-                  className="toolbar__sm-item-delete"
-                  title="Delete state machine"
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (confirm(`Delete state machine "${s.displayName ?? s.name}"?`)) {
-                      store.deleteStateMachine(s.id);
-                    }
-                  }}
-                >×</button>
-              </div>
-            ))}
+            <div className="toolbar__sm-list">
+              {sms.map((s, i) => (
+                <div
+                  key={s.id}
+                  className={`toolbar__sm-item${s.id === activeSmId ? ' toolbar__sm-item--active' : ''}`}
+                  onClick={() => { store.setActiveSm(s.id); setSmDropdownOpen(false); }}
+                >
+                  <span className="toolbar__sm-item-station">S{String(s.stationNumber).padStart(2, '0')}</span>
+                  <span className="toolbar__sm-item-name">{s.displayName ?? s.name}</span>
+                  <button
+                    className="toolbar__sm-item-delete"
+                    title="Delete state machine"
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (confirm(`Delete state machine "${s.displayName ?? s.name}"?`)) {
+                        store.deleteStateMachine(s.id);
+                      }
+                    }}
+                  >×</button>
+                </div>
+              ))}
+            </div>
             <div className="toolbar__sm-dropdown-actions">
               <button
                 className="toolbar__sm-dropdown-btn"
@@ -296,27 +298,29 @@ export function Toolbar({ onGoHome }) {
 
             {recipeDropdownOpen && (
               <div className="toolbar__sm-dropdown">
-                {recipes.map(r => {
-                  const isDefault = r.id === (project.defaultRecipeId ?? recipes[0]?.id);
-                  const vName = r.sequenceVariantId
-                    ? variants.find(v => v.id === r.sequenceVariantId)?.name
-                    : null;
-                  return (
-                    <div
-                      key={r.id}
-                      className={`toolbar__sm-item${r.id === store.activeRecipeId ? ' toolbar__sm-item--active' : ''}`}
-                      onClick={() => { store.setActiveRecipe(r.id); setRecipeDropdownOpen(false); }}
-                    >
-                      <span className="toolbar__sm-item-name">{r.name}</span>
-                      {isDefault && (
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#f59e0b', color: '#fff', fontWeight: 700 }}>DEFAULT</span>
-                      )}
-                      {r.customSequence && (
-                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#0072B5', color: '#fff', fontWeight: 700 }}>{vName ?? 'CUSTOM'}</span>
-                      )}
-                    </div>
-                  );
-                })}
+                <div className="toolbar__sm-list">
+                  {recipes.map(r => {
+                    const isDefault = r.id === (project.defaultRecipeId ?? recipes[0]?.id);
+                    const vName = r.sequenceVariantId
+                      ? variants.find(v => v.id === r.sequenceVariantId)?.name
+                      : null;
+                    return (
+                      <div
+                        key={r.id}
+                        className={`toolbar__sm-item${r.id === store.activeRecipeId ? ' toolbar__sm-item--active' : ''}`}
+                        onClick={() => { store.setActiveRecipe(r.id); setRecipeDropdownOpen(false); }}
+                      >
+                        <span className="toolbar__sm-item-name">{r.name}</span>
+                        {isDefault && (
+                          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#f59e0b', color: '#fff', fontWeight: 700 }}>DEFAULT</span>
+                        )}
+                        {r.customSequence && (
+                          <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 3, background: '#0072B5', color: '#fff', fontWeight: 700 }}>{vName ?? 'CUSTOM'}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
                 <div className="toolbar__sm-dropdown-actions">
                   <button
                     className="toolbar__sm-dropdown-btn"
