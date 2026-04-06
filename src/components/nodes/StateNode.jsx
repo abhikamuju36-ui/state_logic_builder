@@ -425,7 +425,7 @@ function ActionRow({ action, devices, onClickName }) {
          // For cross-SM params, look up source device to get conditions
          let srcDev = device;
          if (device.crossSmId) {
-           const srcSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === device.crossSmId);
+           const srcSm = store.getSmById(device.crossSmId);
            const found = (srcSm?.devices ?? []).find(d => d.name === device.name && d.paramType === 'conditional');
            if (found) srcDev = found;
          }
@@ -435,7 +435,7 @@ function ActionRow({ action, devices, onClickName }) {
           {(() => {
             let srcDev = device;
             if (device.crossSmId) {
-              const srcSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === device.crossSmId);
+              const srcSm = store.getSmById(device.crossSmId);
               const found = (srcSm?.devices ?? []).find(d => d.name === device.name && d.paramType === 'conditional');
               if (found) srcDev = found;
             }
@@ -1034,7 +1034,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
   // When a signal is clicked: if current node is empty → replace with DecisionNode,
   // else → add a DecisionNode below this node and connect it.
   function handleSignalPick(signal) {
-    const freshSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+    const freshSm = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
     const currentNode = freshSm?.nodes?.find(n => n.id === nodeId);
     if (!currentNode) { onClose(); return; }
 
@@ -1477,7 +1477,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
       {/* ── Verify: route each branch (new step or loop back) ─────────── */}
       {step === 'verify-route' && (() => {
-        const freshSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+        const freshSm = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
         const freshNode = freshSm?.nodes?.find(n => n.id === nodeId);
         const verifyAction = (freshNode?.data?.actions ?? []).find(a => {
           const dev = (freshSm?.devices ?? []).find(d => d.id === a.deviceId);

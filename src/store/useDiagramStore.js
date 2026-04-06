@@ -49,6 +49,60 @@ export function _getSmArray(state) {
   return project.stateMachines ?? [];
 }
 
+/**
+ * Apply all project migrations to a raw project object (in-place).
+ * Called on load, switch, and import so all code paths run the same migrations.
+ */
+function _migrateProject(project) {
+  if (!project.partTracking) project.partTracking = { fields: [] };
+  if (!project.signals) {
+    project.signals = [];
+    for (const rp of (project.referencePositions ?? [])) {
+      project.signals.push({
+        id: rp.id, name: rp.name, description: rp.description ?? '',
+        type: 'position',
+        axes: (rp.axes ?? []).map(a => ({
+          smId: a.smId, deviceId: a.axisDeviceId, deviceName: a.axisDeviceId,
+          positionName: a.positionName, tolerance: a.tolerance,
+        })),
+      });
+    }
+    for (const sm of (project.stateMachines ?? [])) {
+      for (const o of (sm.smOutputs ?? [])) {
+        project.signals.push({
+          id: o.id, name: o.name, description: o.description ?? '',
+          type: 'state', smId: sm.id,
+          stateNodeId: o.activeNodeId ?? null, stateName: o.name,
+        });
+      }
+    }
+  }
+  delete project.referencePositions;
+  if (!project.recipes) project.recipes = [];
+  if (!project.recipeOverrides) project.recipeOverrides = {};
+  for (const sm of (project.stateMachines ?? [])) {
+    if (sm.devices) sm.devices = sm.devices.filter(d => !d._autoVision);
+    if (!sm.smOutputs) sm.smOutputs = [];
+    sm.smOutputs = sm.smOutputs.map(o => {
+      if ('triggerNodeId' in o || 'clearNodeId' in o || 'autoClear' in o) {
+        const { triggerNodeId, clearNodeId, autoClear, ...rest } = o;
+        return { ...rest, activeNodeId: triggerNodeId ?? o.activeNodeId ?? null };
+      }
+      return o;
+    });
+    for (const dev of (sm.devices ?? [])) {
+      if (dev.type === 'ServoAxis') {
+        if (!dev.speedProfiles) dev.speedProfiles = [];
+        if (!dev.speedProfiles.find(p => p.name === 'Slow'))
+          dev.speedProfiles.push({ name: 'Slow', speed: 100, accel: 1000, decel: 1000 });
+        if (!dev.speedProfiles.find(p => p.name === 'Fast'))
+          dev.speedProfiles.push({ name: 'Fast', speed: 2500, accel: 25000, decel: 25000 });
+      }
+    }
+  }
+  return project;
+}
+
 /** Apply an updater function to the correct SM array and return the new project. */
 function _updateProject(state, smsUpdater) {
   const { activeRecipeId, project } = state;
@@ -184,77 +238,7 @@ export const useDiagramStore = create(
       },
 
       loadProject(project) {
-        // Ensure partTracking exists for older projects
-        if (!project.partTracking) project.partTracking = { fields: [] };
-        // Migrate referencePositions → signals (position type)
-        if (!project.signals) {
-          project.signals = [];
-          // Convert legacy referencePositions to signals with type='position'
-          for (const rp of (project.referencePositions ?? [])) {
-            project.signals.push({
-              id: rp.id,
-              name: rp.name,
-              description: rp.description ?? '',
-              type: 'position',
-              axes: (rp.axes ?? []).map(a => ({
-                smId: a.smId,
-                deviceId: a.axisDeviceId,
-                deviceName: a.axisDeviceId,
-                positionName: a.positionName,
-                tolerance: a.tolerance,
-              })),
-            });
-          }
-          // Convert legacy smOutputs from each SM → signals with type='state'
-          for (const sm of (project.stateMachines ?? [])) {
-            for (const o of (sm.smOutputs ?? [])) {
-              project.signals.push({
-                id: o.id,
-                name: o.name,
-                description: o.description ?? '',
-                type: 'state',
-                smId: sm.id,
-                stateNodeId: o.activeNodeId ?? null,
-                stateName: o.name,
-              });
-            }
-          }
-        }
-        // Remove legacy referencePositions field
-        delete project.referencePositions;
-        // Ensure recipe fields exist for older projects
-        if (!project.recipes) project.recipes = [];
-        if (!project.recipeOverrides) project.recipeOverrides = {};
-        // Migration: remove legacy _autoVision Parameter devices (replaced by Part Tracking)
-        for (const sm of (project.stateMachines ?? [])) {
-          if (sm.devices) {
-            sm.devices = sm.devices.filter(d => !d._autoVision);
-          }
-          // Keep smOutputs on SM for backward compat rendering but also ensure it exists
-          if (!sm.smOutputs) sm.smOutputs = [];
-          // Migration: convert old latch-pattern (triggerNodeId/clearNodeId/autoClear) to new OTE model (activeNodeId)
-          sm.smOutputs = sm.smOutputs.map(o => {
-            if ('triggerNodeId' in o || 'clearNodeId' in o || 'autoClear' in o) {
-              const { triggerNodeId, clearNodeId, autoClear, ...rest } = o;
-              return { ...rest, activeNodeId: triggerNodeId ?? o.activeNodeId ?? null };
-            }
-            return o;
-          });
-        }
-        // Migration: ensure all ServoAxis devices have Slow + Fast speed profiles
-        for (const sm of (project.stateMachines ?? [])) {
-          for (const dev of (sm.devices ?? [])) {
-            if (dev.type === 'ServoAxis') {
-              if (!dev.speedProfiles) dev.speedProfiles = [];
-              if (!dev.speedProfiles.find(p => p.name === 'Slow')) {
-                dev.speedProfiles.push({ name: 'Slow', speed: 100, accel: 1000, decel: 1000 });
-              }
-              if (!dev.speedProfiles.find(p => p.name === 'Fast')) {
-                dev.speedProfiles.push({ name: 'Fast', speed: 2500, accel: 25000, decel: 25000 });
-              }
-            }
-          }
-        }
+        _migrateProject(project);
         set({
           project,
           activeSmId: project.stateMachines[0]?.id ?? null,
@@ -1756,6 +1740,7 @@ export const useDiagramStore = create(
         // Load target project
         try {
           const loaded = await projectApi.loadProject(filename);
+          _migrateProject(loaded);
           // Restore the last-active SM tab (or fall back to the first SM)
           const restoredSmId = loaded._lastActiveSmId;
           const validSmId = (loaded.stateMachines ?? []).some(sm => sm.id === restoredSmId)
@@ -1910,6 +1895,7 @@ export const useDiagramStore = create(
         const filename = projectApi.toFilename(projectData.name || 'Imported');
 
         try {
+          _migrateProject(projectData);
           await projectApi.saveProject(filename, projectData);
           const restoredSmId = projectData._lastActiveSmId;
           const validSmId = (projectData.stateMachines ?? []).some(sm => sm.id === restoredSmId)

@@ -9,7 +9,7 @@ import { useDiagramStore } from '../../store/useDiagramStore.js';
 
 export function SmOutputModal({ smId, output, onClose }) {
   const store = useDiagramStore();
-  const sm = store.project?.stateMachines?.find(s => s.id === smId);
+  const sm = store.getSmById(smId);
   const nodes = sm?.nodes ?? [];
 
   const [name, setName] = useState(output?.name ?? '');
