@@ -10,7 +10,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Handle, Position, NodeToolbar } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 import { DEVICE_TYPES } from '../../lib/deviceTypes.js';
-import { useDiagramStore } from '../../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { DeviceIcon } from '../DeviceIcons.jsx';
 import { hasSensorForOperation, needsTimerForOperation } from '../../lib/conditionBuilder.js';
 import { getSensorTagForOperation, getDelayTimerForOperation } from '../../lib/tagNaming.js';
@@ -759,7 +759,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
   function finishCrossSmAdd(operation) {
     // Find or auto-create a cross-SM Parameter device in this SM
-    const freshSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+    const freshSm = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
     let ref = (freshSm?.devices ?? []).find(d =>
       d.type === 'Parameter' &&
       d.paramScope === 'cross-sm' &&
@@ -779,7 +779,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
         dataType:    crossSmParam.dataType ?? 'boolean',
       });
       // Read fresh state to get the auto-generated ID
-      const updated = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+      const updated = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
       ref = (updated?.devices ?? []).find(d =>
         d.type === 'Parameter' &&
         d.paramScope === 'cross-sm' &&
@@ -867,7 +867,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
     const verifyName = subjectNames.length <= 2 ? subjectNames.join(' / ') : subjectNames[0] + ' +' + (subjectNames.length - 1);
 
     // Update the verify device's displayName
-    const freshSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+    const freshSm = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
     const freshNode = freshSm?.nodes?.find(n => n.id === nodeId);
     if (freshNode) {
       const verifyAction = (freshNode.data?.actions ?? []).find(a => {
@@ -905,7 +905,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
   /** Final step: create branch nodes/edges based on routing choices */
   function handleVerifyFinish() {
-    const freshSm = useDiagramStore.getState().project?.stateMachines?.find(s => s.id === smId);
+    const freshSm = _getSmArray(useDiagramStore.getState()).find(s => s.id === smId);
     const freshNode = freshSm?.nodes?.find(n => n.id === nodeId);
     if (freshNode) {
       const verifyAction = (freshNode.data?.actions ?? []).find(a => {
@@ -977,8 +977,8 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
   // ── Vision Done handler (auto-create side-exit branch nodes + edges) ──────
   function handleVisionDone() {
     // Guard: prevent duplicate VisionInspect actions if clicked twice
-    const currentNode = useDiagramStore.getState().project?.stateMachines
-      ?.find(s => s.id === smId)?.nodes?.find(n => n.id === nodeId);
+    const currentNode = _getSmArray(useDiagramStore.getState())
+      .find(s => s.id === smId)?.nodes?.find(n => n.id === nodeId);
     const alreadyHasVision = (currentNode?.data?.actions ?? []).some(
       a => a.operation === 'VisionInspect' && a.deviceId === selectedDeviceId && a.jobName === pickerJob
     );
@@ -1040,7 +1040,6 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
     // FIX 5: robust empty check — handles undefined/null/empty actions
     const isEmpty = !currentNode.data?.actions || currentNode.data.actions.length === 0;
-    console.log('[handleSignalPick] nodeId:', nodeId, 'isEmpty:', isEmpty, 'actions:', currentNode.data?.actions);
 
     // Support both old-style signals (name/type) and new vision signals (signalName/signalType/signalSource)
     const resolvedSignalName = signal.signalName ?? signal.name ?? 'Signal';

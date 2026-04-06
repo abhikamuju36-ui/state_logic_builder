@@ -697,7 +697,6 @@ export function Canvas() {
   }, [sm, smNodes, stateNumberMap, visionSubStepsMap, devices]);
 
   // Always use RoutableEdge; show labels only on branch edges (vision/check results).
-  // Edges sourced from OR targeting a decisionNode use 'straight' type for natural routing.
   const edges = useMemo(() => {
     if (!sm) return [];
     // Build a fast lookup map for nodes by id

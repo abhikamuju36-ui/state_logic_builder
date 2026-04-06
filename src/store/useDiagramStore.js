@@ -28,7 +28,7 @@ const defaultProject = {
 // These are defined outside the store so every action can reference them.
 
 /** Return the correct SM array (base or custom/variant) for the current recipe context. */
-function _getSmArray(state) {
+export function _getSmArray(state) {
   const { activeRecipeId, project } = state;
   if (!activeRecipeId) return project.stateMachines ?? [];
   const recipe = (project.recipes ?? []).find(r => r.id === activeRecipeId);
@@ -363,7 +363,7 @@ export const useDiagramStore = create(
             )),
         }));
         // After updating a VisionSystem device, sync vision PT fields
-        const dev = get().project?.stateMachines?.find(s => s.id === smId)?.devices?.find(d => d.id === deviceId);
+        const dev = _getSmArray(get()).find(s => s.id === smId)?.devices?.find(d => d.id === deviceId);
         if (dev?.type === 'VisionSystem') {
           get().syncVisionPartTracking(smId);
         }
@@ -374,7 +374,7 @@ export const useDiagramStore = create(
        * and force a state update so nodes pick up any device changes.
        */
       refreshSubjects(smId) {
-        const sm = get().project?.stateMachines?.find(s => s.id === smId);
+        const sm = _getSmArray(get()).find(s => s.id === smId);
         if (!sm) return;
         // Sync vision params
         get().syncVisionPartTracking(smId);

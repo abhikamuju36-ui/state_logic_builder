@@ -161,11 +161,11 @@ export function Toolbar({ onGoHome }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const loaded = JSON.parse(ev.target.result);
         if (!loaded.stateMachines) throw new Error('Invalid project file');
-        store.importProject(loaded);
+        await store.importProject(loaded);
       } catch (err) {
         alert(`Failed to load project: ${err.message}`);
       }

@@ -323,13 +323,13 @@ export function getDeviceTags(device) {
 
     case 'VisionSystem':
       tags.push({
-        name: resolvePattern(patterns.triggerReady, device),
+        name: resolvePattern(patterns.trigReady, device),
         usage: 'Input',
         dataType: 'BOOL',
         description: `${device.displayName} - Trigger Ready`,
       });
       tags.push({
-        name: resolvePattern(patterns.trigger, device),
+        name: resolvePattern(patterns.triggerOutput, device),
         usage: 'Output',
         dataType: 'BOOL',
         description: `${device.displayName} - Camera Trigger`,

@@ -21,7 +21,7 @@
 
 import { useRef, useCallback } from 'react';
 import { useReactFlow } from '@xyflow/react';
-import { useDiagramStore } from '../../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { OUTCOME_COLORS } from '../../lib/outcomeColors.js';
 
 const NODE_WIDTH = 240;
@@ -215,7 +215,7 @@ export function RoutableEdge({
   // ── Fresh waypoints from store ──────────────────────────────────────────
   const freshWps = useCallback(() => {
     const st = useDiagramStore.getState();
-    const currentSm = (st.project?.stateMachines ?? []).find(s => s.id === smId);
+    const currentSm = _getSmArray(st).find(s => s.id === smId);
     const edge = (currentSm?.edges ?? []).find(e => e.id === id);
     const wps = edge?.data?.waypoints;
     return Array.isArray(wps) ? [...wps] : [];
@@ -272,7 +272,7 @@ export function RoutableEdge({
       window.removeEventListener('mouseup', onUp);
       // Clean up: merge collinear waypoints
       const st = useDiagramStore.getState();
-      const currentSm = (st.project?.stateMachines ?? []).find(s => s.id === smId);
+      const currentSm = _getSmArray(st).find(s => s.id === smId);
       const edge = (currentSm?.edges ?? []).find(e => e.id === id);
       const finalWps = edge?.data?.waypoints;
       if (Array.isArray(finalWps) && finalWps.length > 1) {
