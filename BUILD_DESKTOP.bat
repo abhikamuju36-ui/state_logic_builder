@@ -1,6 +1,6 @@
 @echo off
 title SDC State Logic Builder - Desktop Build
-set APP_DIR=C:\SDC-StateLogic
+set APP_DIR=%~dp0
 
 echo.
 echo  ============================================================
@@ -10,7 +10,7 @@ echo.
 echo  This creates a standalone .exe your team can run without
 echo  needing Node.js, npm, or any technical setup.
 echo.
-echo  Output: %APP_DIR%\release\SDC-State-Logic-Builder.exe
+echo  Output: %APP_DIR%release\SDC-State-Logic-Builder.exe
 echo.
 
 cd /d "%APP_DIR%"
@@ -37,7 +37,7 @@ echo  ============================================================
 echo   DONE!
 echo  ============================================================
 echo.
-echo  Your app is at: %APP_DIR%\release\SDC-State-Logic-Builder.exe
+echo  Your app is at: %APP_DIR%release\SDC-State-Logic-Builder.exe
 echo.
 echo  To share with your team:
 echo    Copy SDC-State-Logic-Builder.exe to their desktop.

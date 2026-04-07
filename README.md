@@ -1,132 +1,78 @@
 # SDC State Logic Builder
 
-A visual state logic diagram builder for SDC (Steven Douglas Corp) that converts mechanical engineering state machine designs into Allen-Bradley Logix 5000 (L5X) PLC code.
+A React web app for building Allen Bradley PLC state machine diagrams and exporting them to L5X code.
 
-## Overview
+## What It Does
 
-The SDC State Logic Builder lets engineers design state machines visually using a drag-and-drop canvas, configure devices and their behaviors, then export the result as structured L5X output ready for PLC integration. Projects are saved as JSON files and can be shared across the team.
+- Draw state machine flowcharts visually on a drag-and-drop canvas
+- Configure devices (cylinders, grippers, servos, sensors, robots, vision systems, conveyors, feeders, printers, etc.)
+- Define state transitions with sensor conditions
+- Export to Allen Bradley L5X PLC code following SDC coding standards
 
-## Features
+## Quick Start (Development)
 
-- **Visual canvas** — drag-and-drop state machine editor built on React Flow
-- **Device library** — sidebar with pre-built device types (servo axes, pneumatic grippers, etc.)
-- **State & decision nodes** — build sequential and conditional logic flows
-- **Device properties** — configure positions, timers, sensor arrangements per device
-- **Recipe management** — manage recipe-driven position parameters
-- **Project manager** — save, load, and delete projects stored on the network share
-- **L5X export** — generate Logix 5000-compatible output from the diagram
-- **Electron desktop app** or **browser-based** deployment via local server
+```bash
+# Install dependencies (first time only)
+npm install
+
+# Start the dev server
+npm run dev
+# App runs at http://localhost:5173
+```
+
+Or double-click **`START_APP.bat`** — it installs dependencies and starts the dev server automatically.
+
+## Team Server (Shared Projects)
+
+Run **`BUILD_AND_RUN.bat`** to build the app and start a local server on port 3131.
+Any computer on the network can connect at `http://<your-ip>:3131`.
+Projects are saved in `data\projects\` — back this folder up regularly.
+
+## Saving Your Work
+
+- **Save button** (toolbar) — downloads the project as a `.json` file to your computer
+- **Open button** — loads a previously saved `.json` file
+- Projects in the browser are also persisted in `localStorage` automatically between sessions
+
+## Building the Desktop App
+
+Run **`BUILD_DESKTOP.bat`** to package the app as a portable `.exe` (requires Electron builder).
+Output goes to `release\SDC-State-Logic-Builder.exe`.
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| UI framework | React 18 + Vite |
-| Diagram canvas | @xyflow/react (React Flow v12) |
-| State management | Zustand |
-| Desktop shell | Electron |
-| Backend server | Node.js (no external dependencies) |
-
-## Project Structure
-
-```
-State Logic Diagrams/
-├── src/
-│   ├── App.jsx                   # Root component, view routing
-│   ├── components/
-│   │   ├── Canvas.jsx            # React Flow canvas
-│   │   ├── DeviceSidebar.jsx     # Draggable device palette
-│   │   ├── Toolbar.jsx           # Top toolbar (save, export, etc.)
-│   │   ├── PropertiesPanel.jsx   # Right-side node/device editor
-│   │   ├── HomePage.jsx          # Landing page
-│   │   ├── nodes/
-│   │   │   ├── StateNode.jsx     # State step node
-│   │   │   └── DecisionNode.jsx  # Conditional branch node
-│   │   └── modals/
-│   │       ├── NewStateMachineModal.jsx
-│   │       ├── AddDeviceModal.jsx
-│   │       ├── ActionModal.jsx
-│   │       ├── ProjectManagerModal.jsx
-│   │       ├── RecipeManagerModal.jsx
-│   │       ├── SignalModal.jsx
-│   │       └── SmOutputModal.jsx
-│   ├── store/
-│   │   └── useDiagramStore.js    # Global Zustand store
-│   └── lib/                      # Utilities and export logic
-├── server.js                     # Project file API server (port 3131)
-├── electron/                     # Electron main process
-├── App Files/                    # Saved project JSON files
-├── dist/                         # Production build output
-├── release/                      # Electron portable .exe output
-├── START_APP.bat                 # Launch script
-├── KEEP_RUNNING.bat              # Keep server running in background
-└── INSTALL_AUTOSTART.bat         # Install server as autostart
-```
-
-## Getting Started
-
-### Development
-
-```bash
-npm install
-npm run dev        # Start Vite dev server
-node server.js     # Start project file server (separate terminal)
-```
-
-### Production (Browser)
-
-```bash
-npm run build      # Build to dist/
-npm run serve      # Serve via server.js on port 3131
-```
-
-Or use the provided batch files:
-- **START_APP.bat** — builds and starts the server
-- **KEEP_RUNNING.bat** — keeps the server alive
-- **INSTALL_AUTOSTART.bat** — configures server to start with Windows
-
-### Desktop (Electron)
-
-```bash
-npm run electron:build   # Produces release/SDC-State-Logic-Builder.exe
-```
-
-Run the portable `.exe` directly — no installation needed.
+- React 18 + Vite
+- @xyflow/react (React Flow v12) for the canvas
+- Zustand for state management
+- Node.js (`server.js`) for optional local project persistence API
 
 ## Project File Server
 
-`server.js` exposes a simple REST API for project persistence:
+`server.js` exposes a simple REST API on port 3131 for project file persistence:
 
 | Method | Endpoint | Description |
-|---|---|---|
+|--------|----------|-------------|
 | GET | `/api/projects` | List all saved projects |
 | GET | `/api/projects/:filename` | Load a project |
-| POST | `/api/projects/:filename` | Save / overwrite a project |
+| POST | `/api/projects/:filename` | Save a project |
 | DELETE | `/api/projects/:filename` | Delete a project |
 
-**Default storage:** `N:\10000_State_Logic_Diagram`
-Override with the `DATA_DIR` environment variable.
+Override the port with the `PORT` environment variable.
 
-**Default port:** `3131`
-Override with the `PORT` environment variable.
+## Device Types Supported
 
-## Project File Format
-
-Projects are saved as `.json` files. Each file contains one or more **state machines**, each with:
-
-- **Devices** — servo axes, pneumatic grippers, cylinders, etc.
-  - Named positions with default values and recipe flags
-  - Timer settings (extend, retract, engage, disengage, etc.)
-- **States** — sequential steps with device actions
-- **Decisions** — conditional branches based on sensor/signal inputs
-- **Transitions** — edges connecting states and decisions
-
-Example device types: `ServoAxis`, `PneumaticGripper`
-
-## Supported Device Types
-
-| Type | Description |
-|---|---|
-| ServoAxis | Servo motor with named target positions |
-| PneumaticGripper | Pneumatic gripper with engage/disengage control |
-| (others) | Configurable via Add Device modal |
+| Device | Notes |
+|--------|-------|
+| Pneumatic Linear Actuator | Extend/Retract solenoids + sensors + delay timers |
+| Pneumatic Rotary Actuator | Extend/Retract solenoids + sensors + delay timers |
+| Pneumatic Gripper | Engage/Disengage solenoids + sensors |
+| Pneumatic Vac Generator | Vacuum on/off + sensor |
+| Servo Axis | MAM motion instructions per named position |
+| Digital Sensor | Input bit |
+| Analog Sensor | Scaled value + setpoint in-range checks |
+| Vision System | Trigger + result + inspect pass signals |
+| Robot | Ready/CycComplete/AtHome + configurable DI/DO signals |
+| Conveyor | Run output |
+| Friction Feeder | FeedComplete/Ready/Jam inputs |
+| Label Printer | Ready/Complete/Fault inputs |
+| Parameter | BOOL (`q_`) or REAL (`p_`) parameter tags |

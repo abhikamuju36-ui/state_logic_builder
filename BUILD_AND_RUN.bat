@@ -1,6 +1,6 @@
 @echo off
 title SDC State Logic Builder - Server
-set APP_DIR=C:\SDC-StateLogic
+set APP_DIR=%~dp0
 
 echo.
 echo  ============================================================
@@ -10,7 +10,7 @@ echo.
 echo  This builds the app and starts a server your WHOLE TEAM
 echo  can access from any computer on the network.
 echo.
-echo  Projects are saved in: %APP_DIR%\data\projects\
+echo  Projects are saved in: %APP_DIR%data\projects\
 echo  (Back up this folder to keep your work safe.)
 echo.
 

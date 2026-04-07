@@ -44,3 +44,6 @@ state logic diagram updated/
 *.png
 *.ico
 *.L5X
+
+# Build output log
+build_output.txt
