@@ -385,15 +385,30 @@ export function getSensorTagForOperation(device, operation) {
   if (!patterns) return null;
 
   const map = {
-    Extend:    patterns.inputExt,
-    Retract:   patterns.inputRet,
-    Engage:    patterns.inputEngage,
-    Disengage: patterns.inputDisengage,
-    VacOn:     patterns.inputVacOn,
-    VacOnEject:patterns.inputVacOnEject,
-    WaitOn:    patterns.inputTag,
-    WaitOff:   patterns.inputTag,
-    Verify:    patterns.inputTag,
+    // Pneumatic
+    Extend:       patterns.inputExt,
+    Retract:      patterns.inputRet,
+    Engage:       patterns.inputEngage,
+    Disengage:    patterns.inputDisengage,
+    VacOn:        patterns.inputVacOn,
+    VacOnEject:   patterns.inputVacOnEject,
+    // Digital sensor
+    WaitOn:       patterns.inputTag,
+    WaitOff:      patterns.inputTag,
+    Verify:       patterns.inputTag,
+    // Robot — verify by checking the resulting input state
+    SendStart:    patterns.inputComplete,
+    WaitReady:    patterns.inputReady,
+    WaitComplete: patterns.inputComplete,
+    WaitAtHome:   patterns.inputAtHome,
+    SendHome:     patterns.inputAtHome,
+    SendReset:    patterns.inputReady,
+    // Friction Feeder
+    Feed:         patterns.inputFeedComplete,
+    // Label Printer
+    PrintApply:   patterns.inputComplete,
+    Print:        patterns.inputReady,
+    Apply:        patterns.inputComplete,
   };
 
   const pattern = map[operation];
@@ -409,13 +424,28 @@ export function getOutputTagForOperation(device, operation) {
   if (!patterns) return null;
 
   const map = {
-    Extend:    patterns.outputExtend,
-    Retract:   patterns.outputRetract,
-    Engage:    patterns.outputEngage,
-    Disengage: patterns.outputDisengage,
-    VacOn:     patterns.outputVacOn,
-    VacOff:    patterns.outputVacOff,
-    VacOnEject:patterns.outputVacOnEject,
+    // Pneumatic
+    Extend:      patterns.outputExtend,
+    Retract:     patterns.outputRetract,
+    Engage:      patterns.outputEngage,
+    Disengage:   patterns.outputDisengage,
+    VacOn:       patterns.outputVacOn,
+    VacOff:      patterns.outputVacOff,
+    VacOnEject:  patterns.outputVacOnEject,
+    // Robot
+    SendStart:   patterns.outputStart,
+    SendReset:   patterns.outputReset,
+    SendHome:    patterns.outputHome,
+    // Conveyor
+    Run:         patterns.outputRun,
+    Stop:        patterns.outputStop,
+    // Friction Feeder
+    Feed:        patterns.outputFeed,
+    Jog:         patterns.outputJog,
+    // Label Printer
+    PrintApply:  patterns.outputPrintApply,
+    Print:       patterns.outputPrint,
+    Apply:       patterns.outputApply,
   };
 
   const pattern = map[operation];

@@ -397,12 +397,147 @@ export const DEVICE_TYPES = {
     colorBg: '#f3eaff',
     sides: 6,
     category: 'Robot',
-    operations: [],
-    tagPatterns: {},
+    operations: [
+      { value: 'SendStart',    label: 'Send Start',          verb: 'SendStart',    icon: '▶' },
+      { value: 'SendReset',    label: 'Send Reset',          verb: 'SendReset',    icon: '↺' },
+      { value: 'SendHome',     label: 'Send to Home',        verb: 'SendHome',     icon: '⌂' },
+      { value: 'WaitReady',    label: 'Wait for Ready',      verb: 'WaitReady',    icon: '⏳' },
+      { value: 'WaitComplete', label: 'Wait for Cycle Done', verb: 'WaitComplete', icon: '✓' },
+      { value: 'WaitAtHome',   label: 'Wait at Home',        verb: 'WaitAtHome',   icon: '⌂' },
+    ],
+    tagPatterns: {
+      outputStart:    'q_{name}Start',
+      outputReset:    'q_{name}Reset',
+      outputHome:     'q_{name}Home',
+      inputReady:     'i_{name}Ready',
+      inputComplete:  'i_{name}CycComplete',
+      inputAtHome:    'i_{name}AtHome',
+      inputFault:     'i_{name}Fault',
+    },
     defaultTimerPreMs: 0,
-    transitionConditions: {},
-    // Signals are user-defined per device instance (stored in device.signals[])
-    // Each signal: { id, name, direction: 'input'|'output', dataType: 'BOOL'|'DINT'|'REAL', description }
+    transitionConditions: {
+      SendStart: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}CycComplete',
+        labelTemplate: "'{deviceName}' Cycle Complete",
+      },
+      WaitReady: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}Ready',
+        labelTemplate: "'{deviceName}' Ready",
+      },
+      WaitComplete: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}CycComplete',
+        labelTemplate: "'{deviceName}' Cycle Complete",
+      },
+      WaitAtHome: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}AtHome',
+        labelTemplate: "'{deviceName}' At Home",
+      },
+      SendHome: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}AtHome',
+        labelTemplate: "'{deviceName}' At Home",
+      },
+      SendReset: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}Ready',
+        labelTemplate: "'{deviceName}' Ready",
+      },
+    },
+  },
+
+  FrictionFeeder: {
+    label: 'Friction Feeder',
+    icon: '📄',
+    color: '#0d9488',
+    colorBg: '#f0fdfb',
+    sides: 8,
+    category: 'Feeder',
+    operations: [
+      { value: 'Feed',     label: 'Feed Cycle',    verb: 'Feed',     icon: '▶' },
+      { value: 'Stop',     label: 'Stop Feed',     verb: 'Stop',     icon: '⏹' },
+      { value: 'Jog',      label: 'Jog Forward',   verb: 'Jog',      icon: '⏩' },
+    ],
+    homePositions: [
+      { value: 'Stop', label: 'Stopped' },
+    ],
+    defaultHomePosition: 'Stop',
+    tagPatterns: {
+      outputFeed:        'q_Feed{name}',
+      outputStop:        'q_Stop{name}',
+      outputJog:         'q_Jog{name}',
+      inputFeedComplete: 'i_{name}FeedComplete',
+      inputReady:        'i_{name}Ready',
+      inputJam:          'i_{name}Jam',
+      timerFeed:         '{name}FeedDelay',
+    },
+    defaultTimerPreMs: 500,
+    transitionConditions: {
+      Feed: {
+        type: 'sensorTimer',
+        sensorTag: 'i_{name}FeedComplete',
+        timerTag: '{name}FeedDelay',
+        labelTemplate: "'{deviceName}' Feed Complete",
+      },
+      Stop: {
+        type: 'immediate',
+        labelTemplate: "'{deviceName}' Stopped",
+      },
+      Jog: {
+        type: 'immediate',
+        labelTemplate: "'{deviceName}' Jog Active",
+      },
+    },
+  },
+
+  LabelPrinter: {
+    label: 'Label / Printer',
+    icon: '🏷',
+    color: '#b45309',
+    colorBg: '#fffbeb',
+    sides: 8,
+    category: 'Feeder',
+    operations: [
+      { value: 'PrintApply', label: 'Print & Apply',  verb: 'PrintApply', icon: '🏷' },
+      { value: 'Print',      label: 'Print Only',     verb: 'Print',      icon: '🖨' },
+      { value: 'Apply',      label: 'Apply Only',     verb: 'Apply',      icon: '▶' },
+    ],
+    homePositions: [
+      { value: 'Idle', label: 'Idle / Ready' },
+    ],
+    defaultHomePosition: 'Idle',
+    tagPatterns: {
+      outputPrintApply: 'q_PrintApply{name}',
+      outputPrint:      'q_Print{name}',
+      outputApply:      'q_Apply{name}',
+      inputReady:       'i_{name}Ready',
+      inputComplete:    'i_{name}Complete',
+      inputFault:       'i_{name}Fault',
+      timerApply:       '{name}ApplyDelay',
+    },
+    defaultTimerPreMs: 300,
+    transitionConditions: {
+      PrintApply: {
+        type: 'sensorTimer',
+        sensorTag: 'i_{name}Complete',
+        timerTag: '{name}ApplyDelay',
+        labelTemplate: "'{deviceName}' Print & Apply Done",
+      },
+      Print: {
+        type: 'sensorOn',
+        sensorTag: 'i_{name}Ready',
+        labelTemplate: "'{deviceName}' Print Done",
+      },
+      Apply: {
+        type: 'sensorTimer',
+        sensorTag: 'i_{name}Complete',
+        timerTag: '{name}ApplyDelay',
+        labelTemplate: "'{deviceName}' Apply Done",
+      },
+    },
   },
 
   Conveyor: {
@@ -448,6 +583,7 @@ export const DEVICE_CATEGORIES = {
   Sensor: ['DigitalSensor', 'AnalogSensor', 'VisionSystem'],
   Robot: ['Robot'],
   Conveyor: ['Conveyor'],
+  Feeder: ['FrictionFeeder', 'LabelPrinter'],
 };
 
 /**

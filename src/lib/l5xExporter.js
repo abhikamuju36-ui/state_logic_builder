@@ -925,6 +925,51 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
         );
         break;
       }
+
+      case 'Robot': {
+        const rp = DEVICE_TYPES.Robot.tagPatterns;
+        // Output tags (PLC → Robot)
+        addTag(buildBoolTagXml(rp.outputStart.replace(/\{name\}/g, device.name),  `${device.displayName} - Start`, 'Output'), rp.outputStart.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(rp.outputReset.replace(/\{name\}/g, device.name),  `${device.displayName} - Reset`, 'Output'), rp.outputReset.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(rp.outputHome.replace(/\{name\}/g, device.name),   `${device.displayName} - Send Home`, 'Output'), rp.outputHome.replace(/\{name\}/g, device.name));
+        // Input tags (Robot → PLC)
+        addTag(buildBoolTagXml(rp.inputReady.replace(/\{name\}/g, device.name),    `${device.displayName} - Ready`,         'Input'), rp.inputReady.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(rp.inputComplete.replace(/\{name\}/g, device.name), `${device.displayName} - Cycle Complete`, 'Input'), rp.inputComplete.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(rp.inputAtHome.replace(/\{name\}/g, device.name),   `${device.displayName} - At Home`,       'Input'), rp.inputAtHome.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(rp.inputFault.replace(/\{name\}/g, device.name),    `${device.displayName} - Fault`,         'Input'), rp.inputFault.replace(/\{name\}/g, device.name));
+        break;
+      }
+
+      case 'Conveyor': {
+        const cp = DEVICE_TYPES.Conveyor.tagPatterns;
+        addTag(buildBoolTagXml(cp.outputRun.replace(/\{name\}/g, device.name),  `${device.displayName} - Run`,  'Output'), cp.outputRun.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(cp.outputStop.replace(/\{name\}/g, device.name), `${device.displayName} - Stop`, 'Output'), cp.outputStop.replace(/\{name\}/g, device.name));
+        break;
+      }
+
+      case 'FrictionFeeder': {
+        const fp = DEVICE_TYPES.FrictionFeeder.tagPatterns;
+        addTag(buildBoolTagXml(fp.outputFeed.replace(/\{name\}/g, device.name), `${device.displayName} - Feed`,  'Output'), fp.outputFeed.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(fp.outputStop.replace(/\{name\}/g, device.name), `${device.displayName} - Stop`,  'Output'), fp.outputStop.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(fp.outputJog.replace(/\{name\}/g, device.name),  `${device.displayName} - Jog`,   'Output'), fp.outputJog.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(fp.inputFeedComplete.replace(/\{name\}/g, device.name), `${device.displayName} - Feed Complete`, 'Input'), fp.inputFeedComplete.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(fp.inputReady.replace(/\{name\}/g, device.name),        `${device.displayName} - Ready`,         'Input'), fp.inputReady.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(fp.inputJam.replace(/\{name\}/g, device.name),          `${device.displayName} - Jam Detected`,  'Input'), fp.inputJam.replace(/\{name\}/g, device.name));
+        addTag(buildTimerTagXml(fp.timerFeed.replace(/\{name\}/g, device.name), `${device.displayName} - Feed Delay`, device.defaultTimerPreMs ?? 500), fp.timerFeed.replace(/\{name\}/g, device.name));
+        break;
+      }
+
+      case 'LabelPrinter': {
+        const lp = DEVICE_TYPES.LabelPrinter.tagPatterns;
+        addTag(buildBoolTagXml(lp.outputPrintApply.replace(/\{name\}/g, device.name), `${device.displayName} - Print & Apply`, 'Output'), lp.outputPrintApply.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(lp.outputPrint.replace(/\{name\}/g, device.name),       `${device.displayName} - Print`,         'Output'), lp.outputPrint.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(lp.outputApply.replace(/\{name\}/g, device.name),       `${device.displayName} - Apply`,         'Output'), lp.outputApply.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(lp.inputReady.replace(/\{name\}/g, device.name),        `${device.displayName} - Ready`,         'Input'),  lp.inputReady.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(lp.inputComplete.replace(/\{name\}/g, device.name),     `${device.displayName} - Complete`,      'Input'),  lp.inputComplete.replace(/\{name\}/g, device.name));
+        addTag(buildBoolTagXml(lp.inputFault.replace(/\{name\}/g, device.name),        `${device.displayName} - Fault`,         'Input'),  lp.inputFault.replace(/\{name\}/g, device.name));
+        addTag(buildTimerTagXml(lp.timerApply.replace(/\{name\}/g, device.name), `${device.displayName} - Apply Delay`, device.defaultTimerPreMs ?? 300), lp.timerApply.replace(/\{name\}/g, device.name));
+        break;
+      }
     }
   }
 
@@ -1645,9 +1690,18 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
   // Opposing (complement only):
   //   Retract, Disengage, VacOff
 
-  const PRIMARY_OPS = new Set(['Extend', 'Engage', 'VacOn', 'VacOnEject']);
+  const PRIMARY_OPS = new Set([
+    // Pneumatic
+    'Extend', 'Engage', 'VacOn', 'VacOnEject',
+    // Conveyor / Feeder — "on" direction is primary
+    'Run', 'Feed', 'Jog',
+    // Label Printer / Robot — output sends
+    'PrintApply', 'Print', 'Apply',
+    'SendStart', 'SendReset', 'SendHome',
+  ]);
 
   const OPPOSING_PAIRS = {
+    // Pneumatic
     Extend: 'Retract',
     Retract: 'Extend',
     Engage: 'Disengage',
@@ -1655,6 +1709,11 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
     VacOn: 'VacOff',
     VacOff: 'VacOn',
     VacOnEject: 'VacOff',
+    // Conveyor
+    Run: 'Stop',
+    Stop: 'Run',
+    // Friction Feeder
+    Feed: 'Stop',
   };
 
   // Per-device: collect setSteps (primary op) and clearSteps (opposing op)
@@ -1712,7 +1771,7 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
     for (const action of node.data.actions ?? []) {
       const device = devices.find((d) => d.id === action.deviceId);
       if (!device) continue;
-      if (device.type === 'Timer' || device.type === 'DigitalSensor' || device.type === 'Parameter' || device.type === 'CheckResults' || device.type === 'VisionSystem') continue;
+      if (device.type === 'Timer' || device.type === 'DigitalSensor' || device.type === 'Parameter' || device.type === 'CheckResults' || device.type === 'VisionSystem' || device.type === 'AnalogSensor') continue;
 
       const outputTag = getOutputTagForOperation(device, action.operation);
       if (!outputTag) continue;
