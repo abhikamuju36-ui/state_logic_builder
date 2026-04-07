@@ -352,6 +352,128 @@ export function buildAutoConditions(sourceNode, devices) {
         break;
       }
 
+      // ── Robot ─────────────────────────────────────────────────────────────
+      case 'Robot': {
+        const tc = typeInfo.transitionConditions?.[action.operation];
+        if (tc) {
+          const sensorTag = tc.sensorTag ? tc.sensorTag.replace(/\{name\}/g, device.name) : null;
+          const label = tc.labelTemplate
+            ? tc.labelTemplate.replace(/\{deviceName\}/g, device.displayName)
+            : `${device.displayName} — ${action.operation}`;
+          if (tc.type === 'sensorOn' && sensorTag) {
+            conditions.push({
+              conditionType: 'sensorOn',
+              deviceId:      device.id,
+              operation:     action.operation,
+              sensorTag,
+              label,
+              description:   `Sensor: ${sensorTag}`,
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          } else if (tc.type === 'immediate') {
+            conditions.push({
+              conditionType: 'always',
+              deviceId:      device.id,
+              operation:     action.operation,
+              label,
+              description:   'Fires immediately',
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          }
+        }
+        break;
+      }
+
+      // ── Friction Feeder ────────────────────────────────────────────────────
+      case 'FrictionFeeder': {
+        const tc = typeInfo.transitionConditions?.[action.operation];
+        if (tc) {
+          const sensorTag = tc.sensorTag ? tc.sensorTag.replace(/\{name\}/g, device.name) : null;
+          const timerTag  = tc.timerTag  ? tc.timerTag.replace(/\{name\}/g, device.name)  : null;
+          const label = tc.labelTemplate
+            ? tc.labelTemplate.replace(/\{deviceName\}/g, device.displayName)
+            : `${device.displayName} — ${action.operation}`;
+          if (tc.type === 'sensorTimer' && sensorTag && timerTag) {
+            conditions.push({
+              conditionType: 'sensorTimer',
+              deviceId:      device.id,
+              operation:     action.operation,
+              sensorTag,
+              timerTag,
+              label,
+              description:   `${sensorTag} + ${timerTag}`,
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          } else if (tc.type === 'immediate') {
+            conditions.push({
+              conditionType: 'always',
+              deviceId:      device.id,
+              operation:     action.operation,
+              label,
+              description:   'Fires immediately',
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          }
+        }
+        break;
+      }
+
+      // ── Label Printer ──────────────────────────────────────────────────────
+      case 'LabelPrinter': {
+        const tc = typeInfo.transitionConditions?.[action.operation];
+        if (tc) {
+          const sensorTag = tc.sensorTag ? tc.sensorTag.replace(/\{name\}/g, device.name) : null;
+          const timerTag  = tc.timerTag  ? tc.timerTag.replace(/\{name\}/g, device.name)  : null;
+          const label = tc.labelTemplate
+            ? tc.labelTemplate.replace(/\{deviceName\}/g, device.displayName)
+            : `${device.displayName} — ${action.operation}`;
+          if (tc.type === 'sensorTimer' && sensorTag && timerTag) {
+            conditions.push({
+              conditionType: 'sensorTimer',
+              deviceId:      device.id,
+              operation:     action.operation,
+              sensorTag,
+              timerTag,
+              label,
+              description:   `${sensorTag} + ${timerTag}`,
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          } else if (tc.type === 'sensorOn' && sensorTag) {
+            conditions.push({
+              conditionType: 'sensorOn',
+              deviceId:      device.id,
+              operation:     action.operation,
+              sensorTag,
+              label,
+              description:   `Sensor: ${sensorTag}`,
+              group:         device.displayName,
+              groupColor:    typeInfo.color,
+            });
+          }
+        }
+        break;
+      }
+
+      // ── Conveyor ───────────────────────────────────────────────────────────
+      case 'Conveyor': {
+        // Conveyor Run/Stop — immediate (no verify sensor)
+        conditions.push({
+          conditionType: 'always',
+          deviceId:      device.id,
+          operation:     action.operation,
+          label:         `${device.displayName} — ${action.operation === 'Run' ? 'Running' : 'Stopped'}`,
+          description:   'Fires immediately',
+          group:         device.displayName,
+          groupColor:    typeInfo.color,
+        });
+        break;
+      }
+
       // ── Vision System ────────────────────────────────────────────────────
       case 'VisionSystem': {
         if (action.operation === 'VisionInspect' && action.outcomes?.length >= 2) {
@@ -618,6 +740,36 @@ export function buildVerifyLabel(sourceNode, devices) {
             deviceId: device.id, operation: action.operation });
         }
         // 2+ outcomes: skip — branching handled in Canvas edge data
+        break;
+      }
+
+      // ── Robot ─────────────────────────────────────────────────────────────
+      case 'Robot': {
+        const sensorTag = getSensorTagForOperation(device, action.operation);
+        if (sensorTag) {
+          conditions.push({ tag: sensorTag, state: 'On', role: 'sensor',
+            deviceId: device.id, operation: action.operation });
+        }
+        break;
+      }
+
+      // ── Friction Feeder ────────────────────────────────────────────────────
+      case 'FrictionFeeder': {
+        const sensorTag = getSensorTagForOperation(device, action.operation);
+        if (sensorTag && action.operation === 'Feed') {
+          conditions.push({ tag: sensorTag, state: 'On', role: 'sensor',
+            deviceId: device.id, operation: action.operation });
+        }
+        break;
+      }
+
+      // ── Label Printer ──────────────────────────────────────────────────────
+      case 'LabelPrinter': {
+        const sensorTag = getSensorTagForOperation(device, action.operation);
+        if (sensorTag) {
+          conditions.push({ tag: sensorTag, state: 'On', role: 'sensor',
+            deviceId: device.id, operation: action.operation });
+        }
         break;
       }
 

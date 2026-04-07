@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { DEVICE_TYPES } from '../../lib/deviceTypes.js';
-import { useDiagramStore } from '../../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { DeviceIcon } from '../DeviceIcons.jsx';
 
 // ── Sensor checkbox helpers ───────────────────────────────────────────────────
@@ -245,7 +245,7 @@ function PositionCard({ pos, index, onChange, onRemove, motionType }) {
 export function AddDeviceModal() {
   const store = useDiagramStore();
   const sm = store.getActiveSm();
-  const allSMs = store.project?.stateMachines ?? [];
+  const allSMs = _getSmArray(store);
   const isEdit = store.showEditDeviceModal;
   const editId = store.editDeviceId;
   const existingDevice = isEdit ? sm?.devices?.find(d => d.id === editId) : null;

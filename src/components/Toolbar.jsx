@@ -4,7 +4,7 @@
  */
 
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { useDiagramStore } from '../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../store/useDiagramStore.js';
 import { downloadL5X, downloadAllL5XAsZip, exportProjectJSON } from '../lib/l5xExporter.js';
 import { buildProgramName } from '../lib/tagNaming.js';
 
@@ -60,7 +60,7 @@ function ReorderPopup({ items, labelFn, onReorder, onClose, title }) {
 export function Toolbar({ onGoHome }) {
   const store = useDiagramStore();
   const { project, activeSmId, serverAvailable } = store;
-  const sms = project.stateMachines ?? [];
+  const sms = _getSmArray(store);
   const sm = store.getActiveSm();
   const fileInputRef = useRef(null);
   const smDropdownRef = useRef(null);

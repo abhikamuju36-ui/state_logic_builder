@@ -571,7 +571,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
   const store = useDiagramStore();
 
   // All SMs — for cross-SM param browsing
-  const allSMs = store.project?.stateMachines ?? [];
+  const allSMs = _getSmArray(store);
   // Other SMs that have at least one GLOBAL Parameter subject
   const otherSMsWithParams = allSMs.filter(
     s => s.id !== smId && (s.devices ?? []).some(d => d.type === 'Parameter' && d.paramScope === 'global')

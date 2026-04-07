@@ -81,9 +81,13 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
         inputs.push({ ref: `${d.id}:inspPass`, tag: `i_${d.name}InspPass`, label: `${d.displayName} Inspection Pass`, inputType: 'bool', group: 'Vision' });
         break;
       case 'Robot':
+        // Standard fixed inputs from tagPatterns
+        inputs.push({ ref: `${d.id}:ready`,    tag: `i_${d.name}Ready`,       label: `${d.displayName} Ready`,         inputType: 'bool', group: 'Robots' });
+        inputs.push({ ref: `${d.id}:complete`, tag: `i_${d.name}CycComplete`, label: `${d.displayName} Cycle Complete`, inputType: 'bool', group: 'Robots' });
+        inputs.push({ ref: `${d.id}:atHome`,   tag: `i_${d.name}AtHome`,      label: `${d.displayName} At Home`,       inputType: 'bool', group: 'Robots' });
+        // Extra configurable signals (if defined by user on the device)
         for (const sig of (d.signals ?? [])) {
           if (!sig.name?.trim()) continue;
-          // Only input signals (DO + DCS from robot to PLC) are checkable conditions
           if (sig.direction === 'input') {
             const tag = `i_${d.name}${sig.name}`;
             const sigGroup = (sig.group || 'DO') === 'DCS' ? 'Robot DCS Zones' : 'Robot DO';
@@ -99,6 +103,16 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
         break;
       case 'Conveyor':
         inputs.push({ ref: `${d.id}:run`, tag: `q_Run${d.name}`, label: `${d.displayName} Running`, inputType: 'bool', group: 'Conveyors' });
+        break;
+      case 'FrictionFeeder':
+        inputs.push({ ref: `${d.id}:complete`, tag: `i_${d.name}FeedComplete`, label: `${d.displayName} Feed Complete`, inputType: 'bool', group: 'Feeders' });
+        inputs.push({ ref: `${d.id}:ready`,    tag: `i_${d.name}Ready`,        label: `${d.displayName} Ready`,         inputType: 'bool', group: 'Feeders' });
+        inputs.push({ ref: `${d.id}:jam`,      tag: `i_${d.name}Jam`,          label: `${d.displayName} Jam`,           inputType: 'bool', group: 'Feeders' });
+        break;
+      case 'LabelPrinter':
+        inputs.push({ ref: `${d.id}:ready`,    tag: `i_${d.name}Ready`,    label: `${d.displayName} Ready`,    inputType: 'bool', group: 'Printers' });
+        inputs.push({ ref: `${d.id}:complete`, tag: `i_${d.name}Complete`, label: `${d.displayName} Complete`, inputType: 'bool', group: 'Printers' });
+        inputs.push({ ref: `${d.id}:fault`,    tag: `i_${d.name}Fault`,    label: `${d.displayName} Fault`,    inputType: 'bool', group: 'Printers' });
         break;
     }
   }

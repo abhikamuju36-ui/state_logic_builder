@@ -1935,6 +1935,7 @@ export const useDiagramStore = create(
             const exists = projects.find(p => p.filename === currentFilename);
             if (exists) {
               const data = await projectApi.loadProject(currentFilename);
+              _migrateProject(data);
               set({
                 project: data,
                 activeSmId: pickActiveSmId(data),
@@ -1948,6 +1949,7 @@ export const useDiagramStore = create(
             projects.sort((a, b) => b.lastModified - a.lastModified);
             const latest = projects[0];
             const data = await projectApi.loadProject(latest.filename);
+            _migrateProject(data);
             set({
               project: data,
               currentFilename: latest.filename,
@@ -2055,8 +2057,10 @@ export const useDiagramStore = create(
                 }
               }
 
-              // Ensure recipes array exists
+              // Ensure recipes array and overrides exist
               if (!state.project.recipes) state.project.recipes = [];
+              if (!state.project.recipeOverrides) state.project.recipeOverrides = {};
+              if (!state.project.partTracking) state.project.partTracking = { fields: [] };
             }
           }
         }

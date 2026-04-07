@@ -9,7 +9,7 @@
  */
 
 import { useState, useMemo, useEffect } from 'react';
-import { useDiagramStore } from '../../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { computeStateNumbers } from '../../lib/computeStateNumbers.js';
 
 // ── Auto Part Tracking signal generator (same logic as DecisionNode) ──────────
@@ -46,7 +46,7 @@ const uid = () => `id_${(_id++).toString(36)}`;
 
 export function SignalModal({ isOpen, onClose, signal }) {
   const store = useDiagramStore();
-  const allSMs = store.project?.stateMachines ?? [];
+  const allSMs = _getSmArray(store);
 
   const [name, setName] = useState(signal?.name ?? '');
   const [description, setDescription] = useState(signal?.description ?? '');

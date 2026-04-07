@@ -15,7 +15,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position } from '@xyflow/react';
-import { useDiagramStore } from '../../store/useDiagramStore.js';
+import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { buildAvailableInputs } from '../../lib/availableInputs.js';
 
 // ── Inline Edit Popup ──────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ function buildVisionSignalsLocal(allSMs) {
 
 function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
   const store = useDiagramStore();
-  const allSMs = store.project?.stateMachines ?? [];
+  const allSMs = _getSmArray(store);
   const projectSignals = store.project?.signals ?? [];
   const ptFields = store.project?.partTracking?.fields ?? [];
   const visionSignals = buildVisionSignalsLocal(allSMs);
