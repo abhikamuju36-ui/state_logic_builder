@@ -152,7 +152,31 @@ export function Toolbar({ onGoHome }) {
   // ── Export handlers ──────────────────────────────────────────────────────────
   function handleExportL5X() {
     if (!sm) return alert('No state machine selected.');
-    if (sm.nodes.length === 0) return alert('No states defined. Add at least one state before exporting.');
+    if ((sm.nodes ?? []).length === 0) return alert('No states defined. Add at least one state before exporting.');
+
+    // Warn about unconfigured decision nodes
+    const unconfiguredDecisions = (sm.nodes ?? []).filter(
+      n => n.type === 'decisionNode' && !n.data?.signalId && !n.data?.sensorTag
+    );
+    if (unconfiguredDecisions.length > 0) {
+      const ok = window.confirm(
+        `${unconfiguredDecisions.length} decision node(s) have no condition configured.\n` +
+        'These will generate unconditional transitions in the L5X.\n\nExport anyway?'
+      );
+      if (!ok) return;
+    }
+
+    // Warn if any devices have invalid tag stems
+    const badDevices = (sm.devices ?? []).filter(d => d.name && !/^[A-Za-z][A-Za-z0-9_]*$/.test(d.name));
+    if (badDevices.length > 0) {
+      const names = badDevices.map(d => d.displayName).join(', ');
+      const ok = window.confirm(
+        `These devices have invalid PLC tag names: ${names}\n` +
+        'Generated tag names may be invalid in Studio 5000.\n\nExport anyway?'
+      );
+      if (!ok) return;
+    }
+
     try { downloadL5X(sm, sms, trackingFields); }
     catch (err) { alert(`Export error: ${err.message}`); console.error(err); }
   }
@@ -188,6 +212,17 @@ export function Toolbar({ onGoHome }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSaveProject]);
+
+  // Warn before tab/window close when there are unsaved changes
+  useEffect(() => {
+    function handleBeforeUnload(e) {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = ''; // Required for Chrome to show the dialog
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // ── Load handler ─────────────────────────────────────────────────────────────
   function handleLoadProject() { fileInputRef.current?.click(); }

@@ -240,6 +240,11 @@ function PositionCard({ pos, index, onChange, onRemove, motionType }) {
   );
 }
 
+/** Valid PLC tag stem: letters/digits/underscore, must start with a letter */
+function isValidPLCName(n) {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(n.trim());
+}
+
 // ── Main Modal Component ──────────────────────────────────────────────────────
 
 export function AddDeviceModal() {
@@ -484,9 +489,13 @@ export function AddDeviceModal() {
     else store.closeAddDeviceModal();
   }
 
+  const tagNameError = name && !isValidPLCName(name)
+    ? 'Must start with a letter and contain only letters, numbers, or underscores (no spaces).'
+    : null;
+
   function handleSubmit(e) {
     e.preventDefault();
-    if (!displayName.trim() || !name.trim()) return;
+    if (!displayName.trim() || !name.trim() || tagNameError) return;
     if (!sm) return;
 
     const deviceData = {
@@ -598,12 +607,15 @@ export function AddDeviceModal() {
           {/* PLC Tag Name */}
           <label className="form-label">PLC Tag Stem *</label>
           <input
-            className="form-input mono"
+            className={`form-input mono${tagNameError ? ' form-input--error' : ''}`}
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. PostCutterCylinder"
           />
-          <div className="form-hint">PascalCase, no spaces — used in all generated tag names</div>
+          {tagNameError
+            ? <div className="form-hint form-hint--error">{tagNameError}</div>
+            : <div className="form-hint">PascalCase, no spaces — used in all generated tag names</div>
+          }
 
           {/* Home Position selector — shown for devices with home positions */}
           {DEVICE_TYPES[type]?.homePositions && (
@@ -1378,7 +1390,7 @@ export function AddDeviceModal() {
             <button type="button" className="btn btn--secondary" onClick={handleClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn--primary" disabled={!displayName.trim() || !name.trim()}>
+            <button type="submit" className="btn btn--primary" disabled={!displayName.trim() || !name.trim() || !!tagNameError}>
               {isEdit ? 'Save Changes' : 'Add Subject'}
             </button>
           </div>

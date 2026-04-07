@@ -6,6 +6,11 @@ import { useState } from 'react';
 import { useDiagramStore } from '../../store/useDiagramStore.js';
 import { buildProgramName } from '../../lib/tagNaming.js';
 
+/** Valid PLC tag name: letters/digits/underscore, must start with a letter */
+function isValidPLCName(n) {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(n.trim());
+}
+
 export function NewStateMachineModal() {
   const store = useDiagramStore();
   const [name, setName] = useState('');
@@ -13,9 +18,13 @@ export function NewStateMachineModal() {
   const [desc, setDesc] = useState('');
   const [addStartState, setAddStartState] = useState(true);
 
+  const nameError = name && !isValidPLCName(name)
+    ? 'Must start with a letter and contain only letters, numbers, or underscores (no spaces).'
+    : null;
+
   function handleSubmit(e) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || nameError) return;
 
     const smId = store.addStateMachine({
       name: name.trim(),
@@ -46,13 +55,16 @@ export function NewStateMachineModal() {
         <form className="modal__body" onSubmit={handleSubmit}>
           <label className="form-label">Station Name *</label>
           <input
-            className="form-input"
+            className={`form-input${nameError ? ' form-input--error' : ''}`}
             autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="e.g. PostCutterVerify"
           />
-          <div className="form-hint">No spaces. PascalCase recommended.</div>
+          {nameError
+            ? <div className="form-hint form-hint--error">{nameError}</div>
+            : <div className="form-hint">No spaces. PascalCase recommended. Used in L5X tag names.</div>
+          }
 
           <label className="form-label">Station Number *</label>
           <input
@@ -91,7 +103,7 @@ export function NewStateMachineModal() {
             <button type="button" className="btn btn--secondary" onClick={store.closeNewSmModal}>
               Cancel
             </button>
-            <button type="submit" className="btn btn--primary" disabled={!name.trim() || !station}>
+            <button type="submit" className="btn btn--primary" disabled={!name.trim() || !station || !!nameError}>
               Create
             </button>
           </div>

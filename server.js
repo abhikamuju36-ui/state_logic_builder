@@ -19,9 +19,10 @@ const path = require('path');
 const url  = require('url');
 const os   = require('os');
 
-const PORT     = Number(process.env.PORT) || 3131;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'projects');
-const DIST_DIR = process.env.DIST_DIR || path.join(__dirname, 'dist');
+const PORT          = Number(process.env.PORT) || 3131;
+const DATA_DIR      = process.env.DATA_DIR || path.join(__dirname, 'projects');
+const DIST_DIR      = process.env.DIST_DIR || path.join(__dirname, 'dist');
+const MAX_BODY_SIZE = 50 * 1024 * 1024; // 50 MB — guard against runaway uploads
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -52,7 +53,15 @@ function safeFilename(f) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', c => chunks.push(c));
+    let received = 0;
+    req.on('data', c => {
+      received += c.length;
+      if (received > MAX_BODY_SIZE) {
+        req.destroy();
+        return reject(new Error(`Request body too large (max ${MAX_BODY_SIZE / 1024 / 1024} MB)`));
+      }
+      chunks.push(c);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
@@ -113,7 +122,10 @@ async function handleSave(req, res, filename) {
       }
     }
 
-    fs.writeFileSync(filePath, body, 'utf8');
+    // Atomic write: write to temp file then rename to prevent corruption on crash
+    const tmpPath = filePath + '.tmp';
+    fs.writeFileSync(tmpPath, body, 'utf8');
+    fs.renameSync(tmpPath, filePath);
     sendJson(res, 200, { ok: true, filename: safe });
   } catch (e) { sendJson(res, 500, { error: e.message }); }
 }

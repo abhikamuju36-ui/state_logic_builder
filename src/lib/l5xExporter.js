@@ -1368,6 +1368,87 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
     // Skip complete nodes — they just loop back to wait (handled by the Complete→Wait rung above)
     if (srcNode.data?.isComplete) continue;
 
+    // ── Decision / Wait nodes ─────────────────────────────────────────────────
+    // Generate conditional branch rungs for each outgoing exit edge.
+    if (srcNode.type === 'decisionNode') {
+      branchHandled.add(srcNode.id);
+      const nodeData  = srcNode.data ?? {};
+      const outEdges  = edges.filter(e => e.source === srcNode.id);
+
+      for (const outEdge of outEdges) {
+        // Decision nodes can target state nodes OR other decision nodes
+        const tgtNode = (sm.nodes ?? []).find(n => n.id === outEdge.target);
+        if (!tgtNode) continue;
+        const tgtStep = stepMap[tgtNode.id];
+        if (tgtStep === undefined) continue;
+
+        const isPassExit  = outEdge.sourceHandle === 'exit-pass' || outEdge.sourceHandle === 'exit-single';
+        const isRetryExit = outEdge.data?.exitColor === 'retry';
+        const outcomeLabel = outEdge.data?.outcomeLabel ?? (isPassExit ? 'Pass' : 'Fail');
+        const desc = getStateDescription(tgtNode, devices);
+
+        // Build the PLC condition tag for this exit
+        let condTag = '';
+        const { signalType, conditionType, sensorTag, sensorInputType,
+                rangeMin, rangeMax, signalSource, signalId } = nodeData;
+
+        if (isRetryExit) {
+          // Retry branch: unconditional (the "loop back and try again" rung)
+          condTag = '';
+        } else if (signalType === 'sensor' && sensorTag) {
+          if (sensorInputType === 'range') {
+            // Range sensor: use AOI_RangeCheck with stored min/max
+            // Pass = In Range, Fail = Out of Range
+            const minVal = rangeMin ?? 0;
+            const maxVal = rangeMax ?? 100;
+            const rcTag  = `${sensorTag}_RC`;
+            if (isPassExit) {
+              condTag = `XIC(${rcTag}.In_Range)`;
+            } else {
+              condTag = `XIO(${rcTag}.In_Range)`;
+            }
+          } else {
+            // Bool sensor: On/Off check
+            const checkOn = conditionType !== 'off';
+            // Pass exit: condition is met; Fail exit: condition is NOT met
+            if (isPassExit) {
+              condTag = checkOn ? `XIC(${sensorTag})` : `XIO(${sensorTag})`;
+            } else {
+              condTag = checkOn ? `XIO(${sensorTag})` : `XIC(${sensorTag})`;
+            }
+          }
+        } else if (signalType === 'visionJob' && signalSource) {
+          // Vision inspection: use i_{deviceName}InspPass
+          const inspPassTag = `i_${signalSource}InspPass`;
+          condTag = isPassExit ? `XIC(${inspPassTag})` : `XIO(${inspPassTag})`;
+        } else if (signalType === 'partTracking' && signalId) {
+          // Part Tracking field
+          const fieldId    = signalId.replace(/^pt_/, '');
+          const field      = (trackingFields ?? []).find(f => f.id === fieldId);
+          if (field) {
+            condTag = isPassExit
+              ? `XIC(PartTracking.${field.name})`
+              : `XIO(PartTracking.${field.name})`;
+          }
+        } else if (signalType === 'state' || signalType === 'position' || signalType === 'condition') {
+          // Project-level signals: tag resolution requires the signal definition.
+          // Emit a comment so the rung compiles but the CE knows to review.
+          const sigLabel = nodeData.signalName ?? 'Signal';
+          condTag = `(* Signal: ${sigLabel} — configure condition in Studio 5000 *)`;
+        }
+        // signalType === null (unconfigured node): condTag stays '' → unconditional advance
+
+        rungs.push(
+          buildRung(
+            rungNum++,
+            `State ${tgtStep}: ${desc} [${outcomeLabel}]`,
+            `XIC(Status.State[${srcStep}])${condTag}MOV(${tgtStep},Control.StateReg);`
+          )
+        );
+      }
+      continue; // decision node exits are fully handled; skip normal sequential logic
+    }
+
     // Check if this node has a CheckResults action with 2+ outcomes → branching
     const checkAction = (srcNode.data?.actions ?? []).find(a => {
       const dev = devices.find(d => d.id === a.deviceId);
@@ -1627,7 +1708,8 @@ function generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs = [], tra
     // For vision nodes, the "last step" is the last sub-state (index 3 = Check Results)
     const effectiveLastStep = lastVisionSubs ? lastVisionSubs[3] : lastStep;
 
-    if (!branchHandled.has(lastNode.id)) {
+    // Decision nodes handle their own transitions via exits; never generate a → Complete rung for them
+    if (!branchHandled.has(lastNode.id) && lastNode.type !== 'decisionNode') {
       let conditions;
       if (lastVisionSubs) {
         // Vision node: sub-state [3] (Check Results) already verified result,

@@ -1364,6 +1364,15 @@ body {
   margin-bottom: 4px;
 }
 
+.form-hint--error {
+  color: #dc2626;
+}
+
+.form-input--error {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px #dc262620;
+}
+
 .form-input {
   width: 100%;
   padding: 7px 10px;
