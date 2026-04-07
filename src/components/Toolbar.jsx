@@ -184,7 +184,6 @@ export function Toolbar({ onGoHome }) {
           className="toolbar__brand toolbar__brand--btn"
           onClick={onGoHome}
           title="Go to home screen"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 6px', display: 'flex', alignItems: 'center' }}
         >
           <svg width={20} height={20} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M13 2L4.5 13.5H11.5L11 22L19.5 10.5H12.5L13 2Z" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
@@ -340,8 +339,8 @@ export function Toolbar({ onGoHome }) {
       })()}
       {/* Right actions */}
       <div className="toolbar__actions">
-        <button className="toolbar__icon-btn" onClick={() => store.undo()} disabled={store._past.length === 0} title="Undo (Ctrl+Z)">↩</button>
-        <button className="toolbar__icon-btn" onClick={() => store.redo()} disabled={store._future.length === 0} title="Redo (Ctrl+Y)">↪</button>
+        <button className="toolbar__icon-btn" onClick={() => store.undo()} disabled={store._past.length === 0} title={`Undo (Ctrl+Z)${store._past.length > 0 ? ` · ${store._past.length} step${store._past.length !== 1 ? 's' : ''}` : ''}`}>↩</button>
+        <button className="toolbar__icon-btn" onClick={() => store.redo()} disabled={store._future.length === 0} title={`Redo (Ctrl+Y)${store._future.length > 0 ? ` · ${store._future.length} step${store._future.length !== 1 ? 's' : ''}` : ''}`}>↪</button>
         <div className="toolbar__divider" />
 
         <button
