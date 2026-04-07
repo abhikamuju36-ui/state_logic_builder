@@ -75,9 +75,9 @@ body {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  height: 52px;
+  gap: 8px;
+  padding: 0 14px;
+  height: 50px;
   background: var(--color-toolbar);
   border-bottom: 1px solid var(--color-border-dark);
   flex-shrink: 0;
@@ -206,7 +206,7 @@ body {
 .toolbar__actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -1428,22 +1428,134 @@ body {
 
 /* ─── Toolbar Extra ─────────────────────────────────────────────────────── */
 .toolbar__project-btn {
-  font-size: 13px !important;
-  font-weight: 600 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  background: #ffffff14;
+  border: 1px solid #ffffff1a;
+  color: #f1f5f9;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
   max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+}
+.toolbar__project-btn:hover { background: #ffffff22; border-color: #ffffff33; }
+.toolbar__project-btn:active { transform: scale(.97); }
+
+.toolbar__project-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
-  display: inline-flex !important;
-  align-items: center;
-  gap: 4px;
+  max-width: 160px;
 }
 
 .toolbar__server-warn {
   font-size: 12px;
   color: #f59e0b;
   flex-shrink: 0;
+}
+
+/* Red dot indicator for unsaved changes */
+.toolbar__unsaved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+/* Recipe badge pills */
+.toolbar__recipe-badge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.toolbar__recipe-badge--default { background: #f59e0b; color: #fff; }
+.toolbar__recipe-badge--custom  { background: #0072B5; color: #fff; }
+
+/* Button group: tightly joined related buttons */
+.toolbar__btn-group {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 0;
+}
+.toolbar__btn-group > .btn + .btn {
+  border-left: 1px solid rgba(255,255,255,.15);
+  border-radius: 0;
+}
+.toolbar__btn-group > .btn:first-child { border-radius: 6px 0 0 6px; }
+.toolbar__btn-group > .btn:last-child  { border-radius: 0 6px 6px 0; }
+.toolbar__btn-group > .btn:only-child  { border-radius: 6px; }
+
+/* ── Toolbar-specific button size ───────────────────────────── */
+.btn--sm {
+  padding: 5px 11px;
+  font-size: 12px;
+}
+
+/* Primary outline (for "Export All" secondary button) */
+.btn--primary-outline {
+  background: transparent;
+  color: #93c5fd;
+  border-color: #1d4ed8;
+}
+.btn--primary-outline:hover:not(:disabled) {
+  background: #1d4ed820;
+  color: #bfdbfe;
+  border-color: #2563eb;
+}
+
+/* Save button — idle state (subtle green tint) */
+.btn--save {
+  background: #1a3a2a;
+  color: #86efac;
+  border-color: #166534;
+}
+.btn--save:hover:not(:disabled) {
+  background: #14532d;
+  border-color: #15803d;
+  color: #bbf7d0;
+}
+
+/* Save button — unsaved changes state (amber) */
+.btn--save-unsaved {
+  background: #451a03;
+  color: #fcd34d;
+  border-color: #92400e;
+  font-weight: 700;
+}
+.btn--save-unsaved:hover:not(:disabled) {
+  background: #78350f;
+  border-color: #b45309;
+  color: #fde68a;
+}
+
+/* Open / Load button */
+.btn--open {
+  background: #1e293b;
+  color: #94a3b8;
+  border-color: #334155;
+}
+.btn--open:hover:not(:disabled) {
+  background: #263548;
+  border-color: #475569;
+  color: #cbd5e1;
 }
 
 .project-list-item:hover {
@@ -3591,7 +3703,7 @@ body {
   position: relative;
   display: flex;
   align-items: center;
-  margin: 0 8px;
+  margin: 0;
 }
 
 .toolbar__sm-active {
