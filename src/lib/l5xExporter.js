@@ -1145,6 +1145,7 @@ function generateR00Main() {
     buildRung(0, 'Subroutine Calls', 'JSR(R01_Inputs,0);'),
     buildRung(1, null, 'JSR(R02_StateTransitions,0);'),
     buildRung(2, null, 'JSR(R03_StateLogic,0);'),
+    buildRung(3, null, 'JSR(R20_Alarms,0);'),
   ];
 
   return `
@@ -1163,49 +1164,43 @@ function generateR00Main() {
 function generateR01Inputs(sm) {
   const rungs = [];
   let rungNum = 0;
-  let addedComment = false;
 
+  // Supervisor integration — mapped inputs
+  rungs.push(buildRung(rungNum++, 'Mapped Inputs from Supervisor', 'NOP();'));
+  rungs.push(buildRung(rungNum++, null, 'XIC(\\Supervisor.q_ManualMode)XIO(HMI_LocalManualOverride)OTE(ManualMode);'));
+  rungs.push(buildRung(rungNum++, null, 'XIC(\\Supervisor.q_SafetyOK)OTE(SafetyOK);'));
+  rungs.push(buildRung(rungNum++, null, 'XIC(\\Supervisor.q_FaultReset)OTE(FaultReset);'));
+  rungs.push(buildRung(rungNum++, null, '[XIC(\\Supervisor.q_CycleStartLatch) ,XIC(HMI_LocalManualOverride) ]OTE(CycleRunning);'));
+  rungs.push(buildRung(rungNum++, null, 'XIO(\\Supervisor.q_CycleStartLatch)OTE(CycleStopping);'));
+  rungs.push(buildRung(rungNum++, null, 'XIC(\\Supervisor.q_CycleStopped)ONS(ONS.0)XIO(Status.State[2])XIO(Status.State[3])OTE(CycleStopped);'));
+
+  // Initialization check
+  rungs.push(buildRung(rungNum++, 'Initialization', 'XIC(Status.State[124])OTE(Initialized);'));
+
+  // 1-sensor actuator delay timers
+  let addedSensorComment = false;
   for (const device of sm.devices ?? []) {
-    if (
-      device.type !== 'PneumaticLinearActuator' &&
-      device.type !== 'PneumaticRotaryActuator'
-    )
-      continue;
-
+    if (device.type !== 'PneumaticLinearActuator' && device.type !== 'PneumaticRotaryActuator') continue;
     const sensorConfig = getSensorConfigKey(device);
     const patterns = DEVICE_TYPES[device.type]?.tagPatterns;
     if (!patterns) continue;
 
     if (sensorConfig === 'retractOnly') {
-      // XIO(i_{name}Ret) → TON({name}ExtDelay,?,?)
       const retSensor = patterns.inputRet.replace(/\{name\}/g, device.name);
       const extDelay = patterns.timerExt.replace(/\{name\}/g, device.name);
-      rungs.push(
-        buildRung(
-          rungNum++,
-          !addedComment ? 'Sensors' : null,
-          `XIO(${retSensor})TON(${extDelay},?,?);`
-        )
-      );
-      addedComment = true;
+      rungs.push(buildRung(rungNum++, !addedSensorComment ? 'Sensor Delay Timers' : null, `XIO(${retSensor})TON(${extDelay},?,?);`));
+      addedSensorComment = true;
     } else if (sensorConfig === 'extendOnly') {
       const extSensor = patterns.inputExt.replace(/\{name\}/g, device.name);
       const retDelay = patterns.timerRet.replace(/\{name\}/g, device.name);
-      rungs.push(
-        buildRung(
-          rungNum++,
-          !addedComment ? 'Sensors' : null,
-          `XIO(${extSensor})TON(${retDelay},?,?);`
-        )
-      );
-      addedComment = true;
+      rungs.push(buildRung(rungNum++, !addedSensorComment ? 'Sensor Delay Timers' : null, `XIO(${extSensor})TON(${retDelay},?,?);`));
+      addedSensorComment = true;
     }
-    // 2-sensor: no R01 rung needed
   }
 
-  if (rungs.length === 0) {
-    rungs.push(buildRung(0, 'No sensor input processing required', 'NOP();'));
-  }
+  // Single step logic
+  rungs.push(buildRung(rungNum++, 'Single Step Logic', 'XIC(LocalSS)OTE(SS);'));
+  rungs.push(buildRung(rungNum++, null, '[XIO(SS) ,XIC(LocalSSONS) ONS(ONS.1) ]OTE(SS_OK);'));
 
   return `
 <Routine Name="R01_Inputs" Type="RLL">
@@ -3462,7 +3457,7 @@ export function downloadL5X(sm, allSMs = [], trackingFields = []) {
  * Export multiple SMs as a single ZIP file containing one .L5X per SM.
  * Minimal ZIP implementation — no external dependencies.
  */
-export function downloadAllL5XAsZip(stateMachines, trackingFields = []) {
+export async function downloadAllL5XAsZip(stateMachines, trackingFields = [], project = null) {
   const files = [];
   for (const sm of stateMachines) {
     if ((sm.nodes ?? []).length === 0) continue;
@@ -3470,6 +3465,18 @@ export function downloadAllL5XAsZip(stateMachines, trackingFields = []) {
     const xml = exportToL5X(sm, stateMachines, trackingFields);
     files.push({ name: `${name}.L5X`, content: xml });
   }
+
+  // Generate Supervisor program if project data is available
+  if (project && (project.machineConfig?.stations ?? []).length > 0) {
+    try {
+      const { exportSupervisorL5X } = await import('./supervisorL5xExporter.js');
+      const supervisorXml = exportSupervisorL5X(project);
+      files.push({ name: 'Supervisor.L5X', content: supervisorXml });
+    } catch (err) {
+      console.warn('Supervisor generation failed:', err);
+    }
+  }
+
   if (files.length === 0) return;
 
   const zipBlob = buildZipBlob(files);
@@ -3485,7 +3492,7 @@ export function downloadAllL5XAsZip(stateMachines, trackingFields = []) {
 
 // ── Minimal ZIP builder (no dependencies) ────────────────────────────────────
 
-function buildZipBlob(files) {
+export function buildZipBlob(files) {
   const enc = new TextEncoder();
   const localHeaders = [];
   const centralHeaders = [];

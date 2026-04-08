@@ -60,6 +60,16 @@ const defaultStandardsProfile = {
   },
   // Axis naming
   axisPrefix: 'a',
+  // Alarm message format
+  alarmMessageFormat: '{station} {stationName}: {message}',
+  // Supervisor states
+  supervisorStates: ['SafetyStopped', 'ManualMode', 'AutoIdle', 'AutoRunning', 'CycleStopping', 'CycleStopped'],
+  // Cycle start delay (ms)
+  cycleStartDelay: 2000,
+  // Stuck-in-run timeout (ms)
+  stuckInRunTimeout: 10000,
+  // Consecutive failures default
+  consecutiveFailuresDefault: 3,
 };
 
 // ─── Machine Config Default ───────────────────────────────────────────────────
@@ -67,7 +77,11 @@ const defaultStandardsProfile = {
 const defaultMachineConfig = {
   machineType: 'indexing',   // 'indexing' | 'linear' | 'robotCell' | 'testInspect' | 'custom'
   machineName: '',
+  customerName: '',
+  projectNumber: '',
+  targetCycleTime: 0,       // seconds
   stationCount: 0,
+  nestCount: 0,             // for indexing machines
   stations: [],              // [{ id, number, name, type, smIds[], bypass, lockout }]
   supervisorStates: ['SafetyStopped', 'ManualMode', 'AutoIdle', 'AutoRunning', 'CycleStopping', 'CycleStopped'],
 };
@@ -772,9 +786,38 @@ export const useDiagramStore = create(
         const decisionNode = sm.nodes.find(n => n.id === nodeId);
         if (!decisionNode) return;
 
-        // Don't create duplicates if branches already exist
+        // If branches already exist, update their labels instead of creating duplicates
         const existingOut = sm.edges.filter(e => e.source === nodeId);
-        if (existingOut.length > 0) return;
+        if (existingOut.length > 0) {
+          const passEdge = existingOut.find(e => e.sourceHandle === 'exit-pass');
+          const failEdge = existingOut.find(e => e.sourceHandle === 'exit-fail');
+          set(s => ({
+            project: _updateProject(s, sms => sms.map(sm2 => {
+              if (sm2.id !== smId) return sm2;
+              const updatedEdges = sm2.edges.map(e => {
+                if (passEdge && e.id === passEdge.id) {
+                  return { ...e, label: exit1Label, data: { ...e.data, label: exit1Label, outcomeLabel: exit1Label } };
+                }
+                if (failEdge && e.id === failEdge.id) {
+                  return { ...e, label: exit2Label, data: { ...e.data, label: exit2Label, outcomeLabel: exit2Label } };
+                }
+                return e;
+              });
+              // Update auto-created child node labels if they still match old edge labels
+              const updatedNodes = sm2.nodes.map(n => {
+                if (passEdge && n.id === passEdge.target && n.data?.label === passEdge.label) {
+                  return { ...n, data: { ...n.data, label: exit1Label } };
+                }
+                if (failEdge && n.id === failEdge.target && n.data?.label === failEdge.label) {
+                  return { ...n, data: { ...n.data, label: exit2Label } };
+                }
+                return n;
+              });
+              return { ...sm2, edges: updatedEdges, nodes: updatedNodes };
+            })),
+          }));
+          return;
+        }
 
         const passId = uid();
         const failId = uid();

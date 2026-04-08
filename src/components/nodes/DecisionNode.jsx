@@ -83,6 +83,17 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
   // After picking any signal/vision, show branch config step
   const [showBranchConfig, setShowBranchConfig] = useState(!!data.signalId);
 
+  // Multi-condition support (AND/OR logic for multiple checks)
+  const [conditions, setConditions] = useState(() => {
+    if (data.conditions?.length) return data.conditions;
+    // Backward compat: build single-entry array from legacy single-condition data
+    if (data.sensorRef) return [{ ref: data.sensorRef, tag: data.sensorTag ?? '', label: data.signalName ?? '', inputType: data.sensorInputType ?? 'bool', conditionType: data.conditionType ?? 'on', signalType: 'sensor', group: data.signalSource ?? '' }];
+    if (data.signalType === 'partTracking') return [{ ref: `_tracking:${data.signalId?.replace('pt_', '')}`, tag: '', label: data.signalName ?? '', inputType: 'bool', conditionType: 'on', signalType: 'partTracking', group: 'Part Tracking' }];
+    return [];
+  });
+  const [conditionLogic, setConditionLogic] = useState(data.conditionLogic ?? 'AND');
+  const [addingCondition, setAddingCondition] = useState(false);
+
   // Click-outside to dismiss (capture phase)
   const popupRef = useRef(null);
   useEffect(() => {
@@ -108,6 +119,13 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
   // Vision job picked -> show branch config
   function handleVisionPick(sig) {
     const jobName = sig.signalName ?? sig.name ?? 'Signal';
+    const newCond = { ref: `vision_${sig.id}`, tag: '', label: `${sig.signalSource} → ${jobName}`, inputType: 'bool', conditionType: 'on', signalType: 'visionJob', group: 'Vision' };
+    if (addingCondition) {
+      setConditions(prev => [...prev, newCond]);
+      setAddingCondition(false);
+      setShowBranchConfig(true);
+      return;
+    }
     setSignalId(sig.id);
     setSignalName(jobName);
     setSignalSource(sig.signalSource ?? '');
@@ -118,6 +136,7 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
     setExit2Label(`Fail_${jobName}`);
     setExitCount(2);
     setNodeMode('wait');
+    setConditions([newCond]);
     setShowBranchConfig(true);
   }
 
@@ -127,6 +146,13 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
     const source = sig.type === 'state' && sig.smName && sig.stateName
       ? `${sig.smName} \u2192 ${sig.stateName}`
       : (sig.smName ?? '');
+    const newCond = { ref: `signal_${sig.id}`, tag: '', label: name, inputType: 'bool', conditionType: 'on', signalType: sig.type ?? 'signal', group: source };
+    if (addingCondition) {
+      setConditions(prev => [...prev, newCond]);
+      setAddingCondition(false);
+      setShowBranchConfig(true);
+      return;
+    }
     setSignalId(sig.id);
     setSignalName(name);
     setSignalSource(source);
@@ -137,11 +163,19 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
     setExit2Label(`False_${name}`);
     setExitCount(1);
     setNodeMode('wait');
+    setConditions([newCond]);
     setShowBranchConfig(true);
   }
 
   // Part Tracking field picked -> show branch config (default to 'decide' — PT is already set, no waiting)
   function handlePTPick(field) {
+    const newCond = { ref: `_tracking:${field.id}`, tag: `PartTracking.${field.name}`, label: field.name, inputType: 'bool', conditionType: 'on', signalType: 'partTracking', group: 'Part Tracking' };
+    if (addingCondition) {
+      setConditions(prev => [...prev, newCond]);
+      setAddingCondition(false);
+      setShowBranchConfig(true);
+      return;
+    }
     setSignalId(`pt_${field.id}`);
     setSignalName(field.name);
     setSignalSource('Part Tracking');
@@ -156,12 +190,20 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
     setSensorRef(null);
     setSensorTag('');
     setSensorInputType('bool');
+    setConditions([newCond]);
     setShowBranchConfig(true);
   }
 
   // Sensor/device input picked -> show branch config with condition setup
   function handleSensorPick(inp) {
     const shortName = inp.label.replace(/\s*\(.*\)$/, '');  // strip cross-SM suffix
+    const newCond = { ref: inp.ref, tag: inp.tag, label: shortName, inputType: inp.inputType ?? 'bool', conditionType: inp.inputType === 'range' ? 'range' : 'on', signalType: 'sensor', group: inp.group };
+    if (addingCondition) {
+      setConditions(prev => [...prev, newCond]);
+      setAddingCondition(false);
+      setShowBranchConfig(true);
+      return;
+    }
     setSignalId(`sensor_${inp.ref}`);
     setSignalName(shortName);
     setSignalSource(inp.group);
@@ -182,6 +224,7 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
       setExit1Label(`On_${shortName}`);
       setExit2Label(`Off_${shortName}`);
     }
+    setConditions([newCond]);
     setShowBranchConfig(true);
   }
 
@@ -208,6 +251,9 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
       // Retry counter (wait mode only)
       retryEnabled: nodeMode === 'wait' ? retryEnabled : false,
       retryMax: nodeMode === 'wait' && retryEnabled ? Number(retryMax) || 3 : undefined,
+      // Multi-condition
+      conditions: conditions.length > 0 ? conditions : undefined,
+      conditionLogic: conditions.length > 1 ? conditionLogic : undefined,
     };
     store.updateNodeData(smId, nodeId, updatedData);
     if (exitCount === 2) {
@@ -256,7 +302,7 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
         <span style={{ fontWeight: 700, fontSize: 11, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           {showBranchConfig
             ? (signalType === 'visionJob' ? `📷 ${signalName}` : signalType === 'partTracking' ? `📋 ${signalName}` : signalType === 'sensor' ? `🔌 ${signalName}` : `⚡ ${signalName}`)
-            : 'Wait On…'}
+            : addingCondition ? '+ Add Condition' : 'Wait On…'}
         </span>
         {showBranchConfig ? (
           <button
@@ -264,6 +310,12 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
             onClick={() => setShowBranchConfig(false)}
             style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 11, padding: '0 2px' }}
           >{'\u2190'} Back</button>
+        ) : addingCondition ? (
+          <button
+            className="nodrag"
+            onClick={() => { setAddingCondition(false); setShowBranchConfig(true); }}
+            style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 11, padding: '0 2px' }}
+          >{'\u2190'} Cancel</button>
         ) : (
           <button
             className="nodrag"
@@ -467,8 +519,8 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
               : 'Step immediately checks current value and routes — no waiting.'}
           </div>
 
-          {/* ── Sensor condition config ─────────────────────── */}
-          {isSensor && (
+          {/* ── Sensor condition config (single condition only) ─── */}
+          {isSensor && conditions.length <= 1 && (
             <div style={{ background: '#111827', border: '1px solid #374151', borderRadius: 6, padding: '6px 8px' }}>
               <div style={{ fontSize: 9, fontWeight: 700, color: '#22d3ee', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Condition</div>
 
@@ -587,6 +639,68 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
                   Tag: {sensorTag}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Multi-condition list ──────────────────────── */}
+          {conditions.length > 0 && (
+            <div style={{ background: '#111827', border: '1px solid #374151', borderRadius: 6, padding: '6px 8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Conditions{conditions.length > 1 ? ` (${conditions.length})` : ''}
+                </span>
+                {conditions.length > 1 && (
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button className="nodrag" onClick={() => setConditionLogic('AND')}
+                      style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+                        background: conditionLogic === 'AND' ? '#16a34a' : '#1a1f2e',
+                        border: conditionLogic === 'AND' ? '1px solid #22c55e' : '1px solid #374151',
+                        color: conditionLogic === 'AND' ? '#fff' : '#6b7280' }}>AND</button>
+                    <button className="nodrag" onClick={() => setConditionLogic('OR')}
+                      style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+                        background: conditionLogic === 'OR' ? '#2563eb' : '#1a1f2e',
+                        border: conditionLogic === 'OR' ? '1px solid #3b82f6' : '1px solid #374151',
+                        color: conditionLogic === 'OR' ? '#fff' : '#6b7280' }}>OR</button>
+                  </div>
+                )}
+              </div>
+              {conditions.length > 1 && (
+                <div style={{ fontSize: 8, color: '#6b7280', marginBottom: 4, lineHeight: 1.3 }}>
+                  {conditionLogic === 'AND'
+                    ? 'ALL conditions must be true to pass.'
+                    : 'ANY condition being true will pass.'}
+                </div>
+              )}
+              {conditions.map((cond, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0', borderTop: idx > 0 ? '1px solid #1f2937' : 'none' }}>
+                  {cond.inputType !== 'range' && (
+                    <button className="nodrag" onClick={() => {
+                      const newType = cond.conditionType === 'on' ? 'off' : 'on';
+                      setConditions(prev => prev.map((c, i) => i === idx ? { ...c, conditionType: newType } : c));
+                      // Sync primary conditionType if it's the first condition
+                      if (idx === 0) setConditionType(newType);
+                    }}
+                      style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, cursor: 'pointer', border: 'none',
+                        background: cond.conditionType === 'off' ? '#dc2626' : '#16a34a',
+                        color: '#fff', flexShrink: 0 }}>
+                      {cond.conditionType === 'off' ? 'OFF' : 'ON'}
+                    </button>
+                  )}
+                  {cond.inputType === 'range' && (
+                    <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3, background: '#78350f', color: '#fbbf24', flexShrink: 0 }}>RNG</span>
+                  )}
+                  <span style={{ flex: 1, fontSize: 10, color: '#e5e7eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cond.label}</span>
+                  {conditions.length > 1 && (
+                    <button className="nodrag" onClick={() => setConditions(prev => prev.filter((_, i) => i !== idx))}
+                      style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 11, padding: '0 2px', flexShrink: 0 }}>×</button>
+                  )}
+                </div>
+              ))}
+              <button className="nodrag" onClick={() => { setAddingCondition(true); setShowBranchConfig(false); }}
+                style={{ width: '100%', marginTop: 4, padding: '4px 0', borderRadius: 4, cursor: 'pointer', fontSize: 10, fontWeight: 600,
+                  background: '#1a1f2e', border: '1px dashed #374151', color: '#6b7280' }}>
+                + Add Condition
+              </button>
             </div>
           )}
 
