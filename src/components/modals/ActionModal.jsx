@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { DEVICE_TYPES } from '../../lib/deviceTypes.js';
+import { DEVICE_TYPES, getDeviceOperations } from '../../lib/deviceTypes.js';
 import { useDiagramStore } from '../../store/useDiagramStore.js';
 import { DeviceIcon } from '../DeviceIcons.jsx';
 
@@ -40,7 +40,7 @@ export function ActionModal() {
 
   const selectedDevice = devices.find(d => d.id === deviceId);
   const typeInfo = selectedDevice ? DEVICE_TYPES[selectedDevice.type] : null;
-  const operations = typeInfo?.operations ?? [];
+  const operations = getDeviceOperations(selectedDevice);
   const selectedOp = operations.find(op => op.value === operation);
   const isServo = selectedDevice?.type === 'ServoAxis';
   const servoPositions = selectedDevice?.positions ?? [];
@@ -53,7 +53,7 @@ export function ActionModal() {
     setDelayMs('');
     // Auto-select first operation if only one
     const dev = devices.find(d => d.id === id);
-    const ops = DEVICE_TYPES[dev?.type]?.operations ?? [];
+    const ops = getDeviceOperations(dev);
     if (ops.length === 1) setOperation(ops[0].value);
   }
 

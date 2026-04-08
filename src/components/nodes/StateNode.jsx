@@ -9,7 +9,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Handle, Position, NodeToolbar } from '@xyflow/react';
 import { createPortal } from 'react-dom';
-import { DEVICE_TYPES } from '../../lib/deviceTypes.js';
+import { DEVICE_TYPES, getDeviceOperations } from '../../lib/deviceTypes.js';
 import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { DeviceIcon } from '../DeviceIcons.jsx';
 import { hasSensorForOperation, needsTimerForOperation } from '../../lib/conditionBuilder.js';
@@ -377,6 +377,9 @@ function ActionRow({ action, devices, onClickName }) {
     } else {
       opLabel = device._autoVerify ? 'Verify' : 'Check';
     }
+  } else if (action.operation?.startsWith('SendDI_')) {
+    // Robot user-defined DI signal: "SendDI_PickReady" → "Send PickReady"
+    opLabel = `Send ${action.operation.slice(7)}`;
   } else {
     opLabel = action.operation;
   }
@@ -625,7 +628,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
   const selectedDevice = devices.find(d => d.id === selectedDeviceId);
   const typeInfo = selectedDevice ? DEVICE_TYPES[selectedDevice.type] : null;
-  const operations = typeInfo?.operations ?? [];
+  const operations = getDeviceOperations(selectedDevice);
   const servoPositions = selectedDevice?.positions ?? [];
   const analogSetpoints = selectedDevice?.setpoints ?? [];
 
@@ -656,7 +659,7 @@ function InlinePicker({ smId, nodeId, devices, onClose, editActionId, editAction
 
     setSelectedDeviceId(deviceId);
     const dev = devices.find(d => d.id === deviceId);
-    const ops = DEVICE_TYPES[dev?.type]?.operations ?? [];
+    const ops = getDeviceOperations(dev);
 
     // ServoAxis: now has 3 operations — show operation picker
     if (dev?.type === 'ServoAxis') {

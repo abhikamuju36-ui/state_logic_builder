@@ -608,6 +608,45 @@ export function getOperationsForType(typeKey) {
 }
 
 /**
+ * Get the full operations list for a specific device instance.
+ * Extends base operations with user-defined signals (Robot DI) and custom device ops.
+ *
+ * @param {object} device - device object from SM
+ * @returns {Array<{ value, label, verb, icon }>}
+ */
+export function getDeviceOperations(device) {
+  if (!device) return [];
+  const baseOps = DEVICE_TYPES[device.type]?.operations ?? [];
+
+  if (device.type === 'Robot') {
+    // Standard DI signal names that are already covered by base ops — don't duplicate them
+    const standardDI = new Set(['Start', 'GoHome', 'Reset', 'Home']);
+    const signals = device.signals ?? [];
+    const dynamicOps = signals
+      .filter(sig => sig.group === 'DI' && sig.name?.trim() && !standardDI.has(sig.name))
+      .map(sig => ({
+        value: `SendDI_${sig.name}`,
+        label: `Send ${sig.name}`,
+        verb: `SendDI_${sig.name}`,
+        icon: '▶',
+      }));
+    return [...baseOps, ...dynamicOps];
+  }
+
+  if (device.type === 'Custom') {
+    const customOps = device.customTypeDef?.operations ?? [];
+    return customOps.map(op => ({
+      value: op.value ?? op.label,
+      label: op.label,
+      verb: op.value ?? op.label,
+      icon: op.icon ?? '⚙',
+    }));
+  }
+
+  return baseOps;
+}
+
+/**
  * Get the default transition condition suggestion for a given device operation
  */
 export function getTransitionSuggestion(typeKey, operation) {
