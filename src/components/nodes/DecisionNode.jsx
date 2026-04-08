@@ -414,9 +414,27 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
         const isVision = signalType === 'visionJob';
         const isSensor = signalType === 'sensor';
         const isRange = sensorInputType === 'range';
-        const singleLabel = isVision ? 'Pass' : 'True';
-        const dualLabel1 = isVision ? 'Pass' : isSensor ? (isRange ? 'In Range' : 'On') : 'True';
-        const dualLabel2 = isVision ? 'Fail' : isSensor ? (isRange ? 'Out of Range' : 'Off') : 'False';
+        // For bool sensors, labels adapt to conditionType (on/off) so clicking the
+        // branch button after switching Check ON↔OFF doesn't reset label order
+        const boolPassLabel = conditionType === 'off' ? 'Off' : 'On';
+        const boolFailLabel = conditionType === 'off' ? 'On' : 'Off';
+        const singleLabel = isVision ? 'Pass' : isSensor && !isRange ? boolPassLabel : 'True';
+        const dualLabel1 = isVision ? 'Pass' : isSensor ? (isRange ? 'In Range' : boolPassLabel) : 'True';
+        const dualLabel2 = isVision ? 'Fail' : isSensor ? (isRange ? 'Out of Range' : boolFailLabel) : 'False';
+
+        // For AnalogSensor range inputs, look up setpoints from the device (live, not stored)
+        const analogSetpoints = (() => {
+          if (!sensorRef || !sensorRef.endsWith(':value')) return [];
+          const deviceId = sensorRef.split(':')[0];
+          const device = currentSm?.devices?.find(d => d.id === deviceId);
+          return device?.type === 'AnalogSensor' ? (device.setpoints ?? []) : [];
+        })();
+        const analogUnit = (() => {
+          if (!sensorRef || !sensorRef.endsWith(':value')) return '';
+          const deviceId = sensorRef.split(':')[0];
+          const device = currentSm?.devices?.find(d => d.id === deviceId);
+          return device?.sensorUnit ?? '';
+        })();
         return (
         <div style={{ padding: '8px 10px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6, overflowY: 'auto' }}>
 
@@ -494,6 +512,39 @@ function DecisionEditPopup({ nodeId, smId, data, onClose, style }) {
                   <div style={{ fontSize: 9, color: '#9ca3af', lineHeight: 1.3 }}>
                     Branch passes if value is within range, fails if outside.
                   </div>
+
+                  {/* Setpoint quick-fill dropdown (AnalogSensor only) */}
+                  {analogSetpoints.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 8, color: '#6b7280', marginBottom: 2 }}>Quick-fill from setpoint</div>
+                      <select
+                        className="nodrag"
+                        defaultValue=""
+                        onChange={e => {
+                          const sp = analogSetpoints.find(s => s.name === e.target.value);
+                          if (sp) {
+                            setRangeMin(sp.lowLimit ?? '');
+                            setRangeMax(sp.highLimit ?? '');
+                            setExit1Label(`InRange_${signalName}_${sp.name}`);
+                            setExit2Label(`OutOfRange_${signalName}_${sp.name}`);
+                          }
+                        }}
+                        style={{
+                          width: '100%', background: '#1a1f2e', border: '1px solid #374151',
+                          color: '#e5e7eb', borderRadius: 4, padding: '4px 6px', fontSize: 11,
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <option value="">— Pick setpoint —</option>
+                        {analogSetpoints.map(sp => (
+                          <option key={sp.name} value={sp.name}>
+                            {sp.name} ({sp.lowLimit?.toFixed(2)} — {sp.highLimit?.toFixed(2)}{analogUnit ? ' ' + analogUnit : ''})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 8, color: '#6b7280', marginBottom: 1 }}>Min</div>
