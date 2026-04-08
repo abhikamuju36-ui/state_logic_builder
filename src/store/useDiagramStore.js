@@ -14,6 +14,66 @@ const uid = () => `id_${(_id++).toString(36)}`;
 
 // ─── Initial State ───────────────────────────────────────────────────────────
 
+// ─── Standards Profile Default ───────────────────────────────────────────────
+
+const defaultStandardsProfile = {
+  // Tag naming
+  tagCase: 'PascalCase',
+  inputPrefix: 'i_',
+  outputPrefix: 'q_',
+  parameterPrefix: 'p_',
+  globalPrefix: 'g_',
+  localPrefix: '',
+  // Tag patterns
+  sensorExtendPattern: 'i_{name}Ext',
+  sensorRetractPattern: 'i_{name}Ret',
+  outputExtendPattern: 'q_Ext{name}',
+  outputRetractPattern: 'q_Ret{name}',
+  delayTimerPattern: '{name}{suffix}Delay',
+  // Program naming
+  stationPrefix: 'S',
+  processPrefix: 'P',
+  programNameSeparator: '_',
+  // Routine names
+  routineNames: {
+    main: 'R00_Main',
+    inputs: 'R01_Inputs',
+    stateTransitions: 'R02_StateTransitions',
+    stateLogicValves: 'R03_StateLogicValves',
+    stateLogicServo: 'R04_StateLogicServo',
+    alarms: 'R20_Alarms',
+  },
+  // AOI references
+  stateEngineAOI: 'State_Engine_128Max',
+  alarmHandlerAOI: 'ProgramAlarmHandler',
+  clockAOI: 'CPU_TimeDate_wJulian',
+  cycleTimeAOI: 'MovingAverage',
+  // Network device prefixes
+  networkPrefixes: {
+    camera: 'cam',
+    robot: 'rob',
+    servoDrive: 'sd',
+    valveBank: 'vb',
+    ioBlock: 'io',
+    vfd: 'fd',
+    genericDevice: 'gd',
+  },
+  // Axis naming
+  axisPrefix: 'a',
+};
+
+// ─── Machine Config Default ───────────────────────────────────────────────────
+
+const defaultMachineConfig = {
+  machineType: 'indexing',   // 'indexing' | 'linear' | 'robotCell' | 'testInspect' | 'custom'
+  machineName: '',
+  stationCount: 0,
+  stations: [],              // [{ id, number, name, type, smIds[], bypass, lockout }]
+  supervisorStates: ['SafetyStopped', 'ManualMode', 'AutoIdle', 'AutoRunning', 'CycleStopping', 'CycleStopped'],
+};
+
+// ─── Initial Project ──────────────────────────────────────────────────────────
+
 const defaultProject = {
   name: 'New Project',
   stateMachines: [],
@@ -22,6 +82,8 @@ const defaultProject = {
   recipes: [],           // [{ id, name, description, isDefault, customSequence, sequenceVariantId }]
   recipeOverrides: {},    // { [recipeId]: { positions, timers, speeds, skippedNodes, customSMs } }
   sequenceVariants: [],   // [{ id, name, stateMachines: [...] }]  — named alternative sequences
+  machineConfig: { ...defaultMachineConfig },
+  standardsProfile: { ...defaultStandardsProfile },
 };
 
 // ─── Recipe-aware SM helpers ─────────────────────────────────────────────────
@@ -80,6 +142,8 @@ function _migrateProject(project) {
   delete project.referencePositions;
   if (!project.recipes) project.recipes = [];
   if (!project.recipeOverrides) project.recipeOverrides = {};
+  if (!project.machineConfig) project.machineConfig = { ...defaultMachineConfig };
+  if (!project.standardsProfile) project.standardsProfile = { ...defaultStandardsProfile };
   for (const sm of (project.stateMachines ?? [])) {
     if (sm.devices) sm.devices = sm.devices.filter(d => !d._autoVision);
     if (!sm.smOutputs) sm.smOutputs = [];
@@ -148,6 +212,7 @@ export const useDiagramStore = create(
       showRecipeManager: false,
 
       // ── UI State ──────────────────────────────────────────────────────────
+      activeView: 'canvas',   // 'canvas' | 'projectSetup'
       selectedNodeId: null,
       selectedEdgeId: null,
 
@@ -228,6 +293,96 @@ export const useDiagramStore = create(
           project: JSON.parse(next),
           _past: [..._past, currentSnapshot],
           _future: newFuture,
+        });
+      },
+
+      // ── View navigation ───────────────────────────────────────────────────
+      setActiveView(view) {
+        set({ activeView: view });
+      },
+
+      // ── Standards Profile actions ─────────────────────────────────────────
+      updateStandardsProfile(updates) {
+        set(s => ({
+          project: {
+            ...s.project,
+            standardsProfile: { ...(s.project.standardsProfile ?? defaultStandardsProfile), ...updates },
+          },
+        }));
+      },
+
+      resetStandardsProfile() {
+        set(s => ({
+          project: { ...s.project, standardsProfile: { ...defaultStandardsProfile } },
+        }));
+      },
+
+      // ── Machine Config actions ────────────────────────────────────────────
+      updateMachineConfig(updates) {
+        set(s => ({
+          project: {
+            ...s.project,
+            machineConfig: { ...(s.project.machineConfig ?? defaultMachineConfig), ...updates },
+          },
+        }));
+      },
+
+      setStationCount(count) {
+        set(s => {
+          const mc = { ...(s.project.machineConfig ?? defaultMachineConfig) };
+          const existing = mc.stations ?? [];
+          const stations = [];
+          for (let i = 0; i < count; i++) {
+            if (i < existing.length) {
+              stations.push(existing[i]);
+            } else {
+              stations.push({
+                id: uid(),
+                number: i + 1,
+                name: `Station ${i + 1}`,
+                type: 'assembly',
+                smIds: [],
+                bypass: false,
+                lockout: false,
+              });
+            }
+          }
+          mc.stations = stations;
+          mc.stationCount = count;
+          return { project: { ...s.project, machineConfig: mc } };
+        });
+      },
+
+      updateStation(stationId, updates) {
+        set(s => {
+          const mc = { ...(s.project.machineConfig ?? defaultMachineConfig) };
+          mc.stations = (mc.stations ?? []).map(st =>
+            st.id === stationId ? { ...st, ...updates } : st
+          );
+          return { project: { ...s.project, machineConfig: mc } };
+        });
+      },
+
+      linkSmToStation(stationId, smId) {
+        set(s => {
+          const mc = { ...(s.project.machineConfig ?? defaultMachineConfig) };
+          mc.stations = (mc.stations ?? []).map(st => {
+            if (st.id !== stationId) return st;
+            const smIds = [...new Set([...(st.smIds ?? []), smId])];
+            return { ...st, smIds };
+          });
+          return { project: { ...s.project, machineConfig: mc } };
+        });
+      },
+
+      unlinkSmFromStation(stationId, smId) {
+        set(s => {
+          const mc = { ...(s.project.machineConfig ?? defaultMachineConfig) };
+          mc.stations = (mc.stations ?? []).map(st => {
+            if (st.id !== stationId) return st;
+            return { ...st, smIds: (st.smIds ?? []).filter(id => id !== smId) };
+          });
+          return { project: { ...s.project, machineConfig: mc } };
         });
       },
 
@@ -2061,6 +2216,9 @@ export const useDiagramStore = create(
               if (!state.project.recipes) state.project.recipes = [];
               if (!state.project.recipeOverrides) state.project.recipeOverrides = {};
               if (!state.project.partTracking) state.project.partTracking = { fields: [] };
+              // Ensure new fields exist for projects saved before these were added
+              if (!state.project.machineConfig) state.project.machineConfig = { ...defaultMachineConfig };
+              if (!state.project.standardsProfile) state.project.standardsProfile = { ...defaultStandardsProfile };
             }
           }
         }

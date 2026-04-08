@@ -8,6 +8,9 @@ import { useState, useEffect } from 'react';
 import { DEVICE_TYPES } from '../../lib/deviceTypes.js';
 import { useDiagramStore, _getSmArray } from '../../store/useDiagramStore.js';
 import { DeviceIcon } from '../DeviceIcons.jsx';
+import { CustomDeviceConfigurator } from './CustomDeviceConfigurator.jsx';
+import { DeviceLibraryPicker } from './DeviceLibraryPicker.jsx';
+import { saveToLibrary } from '../../lib/deviceLibrary.js';
 
 // ── Sensor checkbox helpers ───────────────────────────────────────────────────
 
@@ -391,6 +394,10 @@ export function AddDeviceModal() {
   const [bidirectional, setBidirectional] = useState(existingDevice?.bidirectional ?? false);
   const [hasSpeedControl, setHasSpeedControl] = useState(existingDevice?.hasSpeedControl ?? true);
 
+  // Custom device state
+  const [customTypeDef, setCustomTypeDef] = useState(existingDevice?.customTypeDef ?? { outputs: [], inputs: [], operations: [], complementPairs: [], analogIO: [] });
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+
   // Sensor checkboxes — derived from sensorArrangement
   const isPneumatic = ['PneumaticLinearActuator', 'PneumaticRotaryActuator'].includes(type);
   const isGripper = type === 'PneumaticGripper';
@@ -401,6 +408,7 @@ export function AddDeviceModal() {
   const isVision = type === 'VisionSystem';
   const isRobot = type === 'Robot';
   const isConveyor = type === 'Conveyor';
+  const isCustom = type === 'Custom';
 
   const linearParsed = parseLinearConfig(sensorArrangement);
   const gripperParsed = parseGripperConfig(sensorArrangement);
@@ -445,6 +453,10 @@ export function AddDeviceModal() {
     const gp = parseGripperConfig(defaultArr);
     setHasEngSensor(gp.hasEng);
     setHasDisSensor(gp.hasDis);
+    // Reset custom device def when switching away
+    if (newType !== 'Custom') {
+      setCustomTypeDef({ outputs: [], inputs: [], operations: [], complementPairs: [], analogIO: [] });
+    }
   }
 
   function addSpeedProfile() {
@@ -537,6 +549,8 @@ export function AddDeviceModal() {
       driveType: isConveyor ? driveType : undefined,
       bidirectional: isConveyor ? bidirectional : undefined,
       hasSpeedControl: isConveyor ? hasSpeedControl : undefined,
+      // Custom device definition (denormalized for portability)
+      customTypeDef: isCustom ? customTypeDef : undefined,
     };
 
     if (isEdit && editId) {
@@ -552,7 +566,7 @@ export function AddDeviceModal() {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) handleClose(); }}>
-      <div className="modal" style={{ width: isServo ? 720 : isRobot ? 620 : 520, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="modal" style={{ width: isServo ? 720 : (isRobot || isCustom) ? 640 : 520, maxHeight: '90vh', overflowY: 'auto' }}>
         <div className="modal__header">
           <span>{isEdit ? 'Edit Subject' : 'Add Subject'}</span>
           <button className="icon-btn" onClick={handleClose}>✕</button>
@@ -1202,6 +1216,45 @@ export function AddDeviceModal() {
             </>
           )}
 
+          {/* Custom Device Configurator */}
+          {isCustom && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                <label className="form-label" style={{ margin: 0 }}>Custom Device Definition</label>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => setShowLibraryPicker(true)}>
+                  Load from Library
+                </button>
+              </div>
+              <CustomDeviceConfigurator
+                value={customTypeDef}
+                onChange={setCustomTypeDef}
+              />
+              {customTypeDef.operations?.length > 0 && (
+                <button
+                  type="button"
+                  className="btn btn--sm btn--ghost"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    const def = { ...customTypeDef, label: displayName || 'Custom Device', icon: '🔧' };
+                    saveToLibrary(def);
+                    alert('Saved to device library!');
+                  }}
+                >
+                  Save to Library
+                </button>
+              )}
+              {showLibraryPicker && (
+                <DeviceLibraryPicker
+                  onSelect={(def) => {
+                    setCustomTypeDef(def);
+                    if (def.label && !displayName) setDisplayName(def.label);
+                  }}
+                  onClose={() => setShowLibraryPicker(false)}
+                />
+              )}
+            </>
+          )}
+
           {/* Servo: axis config + speed profiles + positions/moves */}
           {isServo && (
             <>
@@ -1380,6 +1433,19 @@ export function AddDeviceModal() {
                   <>
                     <>p_{name} ({dataType === 'numeric' ? 'REAL' : 'BOOL'}{paramScope === 'global' ? ', global' : ''})</>
 
+                  </>
+                )}
+                {isCustom && customTypeDef && (
+                  <>
+                    {(customTypeDef.outputs || []).map(o => (
+                      <span key={o.name}>{(o.tagPattern || '').replace(/\{name\}/g, name)} (BOOL — output)<br /></span>
+                    ))}
+                    {(customTypeDef.inputs || []).map(i => (
+                      <span key={i.name}>{(i.tagPattern || '').replace(/\{name\}/g, name)} ({i.dataType || 'BOOL'} — input)<br /></span>
+                    ))}
+                    {(customTypeDef.operations || []).filter(op => op.timerSuffix).map(op => (
+                      <span key={op.value}>{name}{op.timerSuffix} (TIMER — {op.defaultTimerMs ?? 500}ms)<br /></span>
+                    ))}
                   </>
                 )}
               </div>

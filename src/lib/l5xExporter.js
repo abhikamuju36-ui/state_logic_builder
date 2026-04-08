@@ -106,18 +106,18 @@ function resolveInputRefTag(inputRef, devices, allSMs = [], trackingFields = [])
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const SCHEMA_REV = '1.0';
-const SOFTWARE_REV = '37.00';
-const STEP_BASE = 1;          // Wait/Home state = 1
+export const SCHEMA_REV = '1.0';
+export const SOFTWARE_REV = '37.00';
+export const STEP_BASE = 1;          // Wait/Home state = 1
 const STEP_INCREMENT = 3;     // First action = 4, then 7, 10, 13, …
 const DEFAULT_FAULT_TIME = 5000;
-const CONTROLLER_NAME = 'SDCController';
+export const CONTROLLER_NAME = 'SDCController';
 
 // ── Date helper (Studio 5000 expects C ctime format: "Mon Dec 15 15:57:26 2025") ──────────
 
 // ── XML helpers ──────────────────────────────────────────────────────────────
 
-function escapeXml(str) {
+export function escapeXml(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -125,7 +125,7 @@ function escapeXml(str) {
     .replace(/"/g, '&quot;');
 }
 
-function cdata(str) {
+export function cdata(str) {
   return `<![CDATA[${str}]]>`;
 }
 
@@ -253,7 +253,7 @@ function getStateDescription(node, devices) {
 
 // ── Rung builder ─────────────────────────────────────────────────────────────
 
-function buildRung(number, comment, text) {
+export function buildRung(number, comment, text) {
   let xml = `\n<Rung Number="${number}" Type="N">`;
   if (comment) {
     xml += `\n<Comment>\n${cdata(comment)}\n</Comment>`;
@@ -265,7 +265,7 @@ function buildRung(number, comment, text) {
 
 // ── Tag XML builders ─────────────────────────────────────────────────────────
 
-function buildTimerTagXml(name, description, preMs) {
+export function buildTimerTagXml(name, description, preMs) {
   return `
 <Tag Name="${name}" TagType="Base" DataType="TIMER" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
 <Description>
@@ -286,7 +286,7 @@ ${cdata(`[0,${preMs},0]`)}
 </Tag>`;
 }
 
-function buildBoolTagXml(name, description, usage, externalAccess = 'Read/Write') {
+export function buildBoolTagXml(name, description, usage, externalAccess = 'Read/Write') {
   const usageAttr = usage ? ` Usage="${usage}"` : '';
   return `
 <Tag Name="${name}" TagType="Base" DataType="BOOL" Radix="Decimal"${usageAttr} Constant="false" ExternalAccess="${externalAccess}" OpcUaAccess="None">
@@ -302,7 +302,7 @@ ${cdata('0')}
 </Tag>`;
 }
 
-function buildDintTagXml(name, description, defaultValue = 0) {
+export function buildDintTagXml(name, description, defaultValue = 0) {
   return `
 <Tag Name="${name}" TagType="Base" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
 <Description>
@@ -413,11 +413,11 @@ ${cdata(String(defaultValue.toFixed(6)))}
 
 // ── 128-element BOOL array helpers ───────────────────────────────────────────
 
-function generate128BoolL5K() {
+export function generate128BoolL5K() {
   return Array(128).fill('2#0').join(',');
 }
 
-function generate128BoolDecorated() {
+export function generate128BoolDecorated() {
   const lines = [];
   for (let i = 0; i < 128; i++) {
     lines.push(`<Element Index="[${i}]" Value="0"/>`);
@@ -427,7 +427,7 @@ function generate128BoolDecorated() {
 
 // ── Control tag (StateLogicControl UDT) ──────────────────────────────────────
 
-function buildControlTagXml() {
+export function buildControlTagXml() {
   return `
 <Tag Name="Control" TagType="Base" DataType="StateLogicControl" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
 <Data Format="L5K">
@@ -518,7 +518,7 @@ ${boolDec}
 
 // ── StateEngine tag (AOI instance) ───────────────────────────────────────────
 
-function buildStateEngineTagXml() {
+export function buildStateEngineTagXml() {
   const boolL5K = generate128BoolL5K();
 
   return `
@@ -537,7 +537,7 @@ ${cdata(`[1,[1,0,0,0,0,0,0,0,0,4,0,0],0,0,[1,0,0,0,0,0,0,0,0,4,0,0],[[${boolL5K}
 
 // ── StateHistory tag (SINT[10]) ──────────────────────────────────────────────
 
-function buildStateHistoryTagXml() {
+export function buildStateHistoryTagXml() {
   return `
 <Tag Name="StateHistory" TagType="Base" DataType="SINT" Dimensions="10" Radix="Decimal" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
 <Data Format="L5K">
@@ -2231,7 +2231,7 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
 
 // ── UDT Definitions ──────────────────────────────────────────────────────────
 
-function generateDataTypes(hasServos = false, trackingFields = []) {
+export function generateDataTypes(hasServos = false, trackingFields = []) {
   let servoUDT = '';
   if (hasServos) {
     servoUDT = `
@@ -2435,7 +2435,7 @@ ${cdata('LIMIT(Min,Actual,Max)OTE(In_Range);')}
 
 // ── AOI Definition (State_Engine_128Max) ─────────────────────────────────────
 
-function generateAOI(hasServos = false) {
+export function generateAOI(hasServos = false) {
   const boolL5K = generate128BoolL5K();
   const boolDec = generate128BoolDecorated();
 

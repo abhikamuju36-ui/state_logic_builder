@@ -11,6 +11,7 @@ import { DeviceSidebar } from './components/DeviceSidebar.jsx';
 import { Canvas } from './components/Canvas.jsx';
 import { PropertiesPanel } from './components/PropertiesPanel.jsx';
 import { HomePage } from './components/HomePage.jsx';
+import { ProjectSetup } from './components/ProjectSetup.jsx';
 import { NewStateMachineModal } from './components/modals/NewStateMachineModal.jsx';
 import { AddDeviceModal } from './components/modals/AddDeviceModal.jsx';
 import { ActionModal } from './components/modals/ActionModal.jsx';
@@ -94,6 +95,7 @@ export function App() {
     showActionModal,
     showProjectManager,
     showRecipeManager,
+    activeView,
   } = store;
 
   // 'home' shows the landing page, 'editor' shows the diagram builder
@@ -110,6 +112,8 @@ export function App() {
       <ReactFlowProvider>
         {view === 'home' ? (
           <HomePage onEnterEditor={() => setView('editor')} />
+        ) : activeView === 'projectSetup' ? (
+          <ProjectSetup />
         ) : (
           <div className="app-layout">
             <Toolbar onGoHome={() => setView('home')} />

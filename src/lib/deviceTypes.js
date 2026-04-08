@@ -574,6 +574,19 @@ export const DEVICE_TYPES = {
       },
     },
   },
+
+  Custom: {
+    label: 'Custom Device',
+    icon: '🔧',
+    color: '#7c3aed',
+    colorBg: '#f5f3ff',
+    sides: 6,
+    category: 'Custom',
+    operations: [],  // populated per-instance via device.customTypeDef.operations
+    tagPatterns: {},
+    defaultTimerPreMs: 500,
+    transitionConditions: {},
+  },
 };
 
 export const DEVICE_CATEGORIES = {
@@ -584,6 +597,7 @@ export const DEVICE_CATEGORIES = {
   Robot: ['Robot'],
   Conveyor: ['Conveyor'],
   Feeder: ['FrictionFeeder', 'LabelPrinter'],
+  Custom: ['Custom'],
 };
 
 /**

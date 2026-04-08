@@ -111,7 +111,7 @@ function IconRedo() {
 // ── Main Toolbar ───────────────────────────────────────────────────────────────
 export function Toolbar({ onGoHome }) {
   const store = useDiagramStore();
-  const { project, activeSmId, serverAvailable } = store;
+  const { project, activeSmId, serverAvailable, activeView } = store;
   const sms = _getSmArray(store);
   const sm = store.getActiveSm();
   const fileInputRef = useRef(null);
@@ -463,6 +463,17 @@ export function Toolbar({ onGoHome }) {
             Open
           </button>
         </div>
+
+        <div className="toolbar__divider" />
+
+        {/* Setup */}
+        <button
+          className={`btn btn--ghost toolbar__setup-btn${activeView === 'projectSetup' ? ' toolbar__setup-btn--active' : ''}`}
+          onClick={() => store.setActiveView(activeView === 'projectSetup' ? 'canvas' : 'projectSetup')}
+          title="Machine Configuration & Standards Profile"
+        >
+          ⚙ Setup
+        </button>
 
       </div>
 
