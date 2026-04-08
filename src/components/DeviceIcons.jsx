@@ -242,6 +242,26 @@ function AnalogSensorIcon({ size, color }) {
   );
 }
 
+// ── Custom Device (wrench + gear) ─────────────────────────────────────────────
+function CustomDeviceIcon({ size, color }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Gear */}
+      <circle cx="15" cy="9" r="3" stroke={color} strokeWidth="1.4" fill="none"/>
+      <circle cx="15" cy="9" r="1.2" fill={color}/>
+      {/* Gear teeth */}
+      <line x1="15" y1="4.5" x2="15" y2="6" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="15" y1="12" x2="15" y2="13.5" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="10.5" y1="9" x2="12" y2="9" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+      <line x1="18" y1="9" x2="19.5" y2="9" stroke={color} strokeWidth="1.3" strokeLinecap="round"/>
+      {/* Wrench handle */}
+      <line x1="3" y1="21" x2="10" y2="14" stroke={color} strokeWidth="1.8" strokeLinecap="round"/>
+      {/* Wrench head */}
+      <path d="M10 14 L12 12 L11 11 L13 9" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    </svg>
+  );
+}
+
 // ── Icon registry ─────────────────────────────────────────────────────────────
 
 const ICON_COMPONENTS = {
@@ -257,6 +277,7 @@ const ICON_COMPONENTS = {
   AnalogSensor:            AnalogSensorIcon,
   Parameter:               ParameterIcon,
   VisionSystem:            VisionSystemIcon,
+  Custom:                  CustomDeviceIcon,
 };
 
 export const DEVICE_ICON_COLORS = {
@@ -272,6 +293,7 @@ export const DEVICE_ICON_COLORS = {
   AnalogSensor:            '#6366f1',
   Parameter:               '#f97316',
   VisionSystem:            '#0891b2',
+  Custom:                  '#6b7280',
 };
 
 /**

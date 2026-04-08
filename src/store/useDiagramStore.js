@@ -454,6 +454,89 @@ export const useDiagramStore = create(
         set({ activeSmId: id, selectedNodeId: null, selectedEdgeId: null });
       },
 
+      duplicateStateMachine(sourceId) {
+        get()._pushHistory();
+        const source = get().project.stateMachines.find(sm => sm.id === sourceId);
+        if (!source) return null;
+
+        // Build ID remapping tables
+        const deviceIdMap = {};
+        const nodeIdMap = {};
+
+        // Clone devices with new IDs
+        const newDevices = (source.devices ?? []).map(dev => {
+          const newId = uid();
+          deviceIdMap[dev.id] = newId;
+          return { ...JSON.parse(JSON.stringify(dev)), id: newId };
+        });
+
+        // Clone nodes with new IDs, remap deviceId in actions
+        const newNodes = (source.nodes ?? []).map(node => {
+          const newId = uid();
+          nodeIdMap[node.id] = newId;
+          const newData = JSON.parse(JSON.stringify(node.data ?? {}));
+          if (newData.actions) {
+            newData.actions = newData.actions.map(a => ({
+              ...a,
+              deviceId: a.deviceId === '_tracking' ? '_tracking' : (deviceIdMap[a.deviceId] ?? a.deviceId),
+            }));
+          }
+          return { ...node, id: newId, data: newData, selected: false };
+        });
+
+        // Clone edges with new IDs, remap source/target + data.deviceId
+        const newEdges = (source.edges ?? []).map(edge => {
+          const newEdge = JSON.parse(JSON.stringify(edge));
+          newEdge.id = uid();
+          newEdge.source = nodeIdMap[edge.source] ?? edge.source;
+          newEdge.target = nodeIdMap[edge.target] ?? edge.target;
+          if (newEdge.data?.deviceId) {
+            newEdge.data.deviceId = deviceIdMap[newEdge.data.deviceId] ?? newEdge.data.deviceId;
+          }
+          newEdge.selected = false;
+          return newEdge;
+        });
+
+        // Remap _sourceNodeId on devices (CheckResults auto-verify)
+        for (const dev of newDevices) {
+          if (dev._sourceNodeId) {
+            dev._sourceNodeId = nodeIdMap[dev._sourceNodeId] ?? dev._sourceNodeId;
+          }
+        }
+
+        // Clone smOutputs with new IDs, remap activeNodeId
+        const newOutputs = (source.smOutputs ?? []).map(out => ({
+          ...JSON.parse(JSON.stringify(out)),
+          id: uid(),
+          activeNodeId: out.activeNodeId ? (nodeIdMap[out.activeNodeId] ?? out.activeNodeId) : null,
+        }));
+
+        // Find next station number
+        const allNums = get().project.stateMachines.map(sm => sm.stationNumber ?? 0);
+        const nextNum = Math.max(...allNums, 0) + 1;
+
+        const newId = uid();
+        const newSm = {
+          id: newId,
+          name: (source.name + 'Copy').replace(/[^a-zA-Z0-9_]/g, ''),
+          displayName: (source.displayName ?? source.name) + ' (Copy)',
+          stationNumber: nextNum,
+          description: source.description ?? '',
+          devices: newDevices,
+          nodes: newNodes,
+          edges: newEdges,
+          smOutputs: newOutputs,
+        };
+
+        set(s => ({
+          project: { ...s.project, stateMachines: [...s.project.stateMachines, newSm] },
+          activeSmId: newId,
+          selectedNodeId: null,
+          selectedEdgeId: null,
+        }));
+        return newId;
+      },
+
       reorderStateMachines(fromIndex, toIndex) {
         get()._pushHistory();
         set(s => {

@@ -79,6 +79,22 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
         inputs.push({ ref: `${d.id}:trigReady`, tag: `i_${d.name}TrigRdy`, label: `${d.displayName} Trigger Ready`, inputType: 'bool', group: 'Vision' });
         inputs.push({ ref: `${d.id}:resultReady`, tag: `i_${d.name}ResultReady`, label: `${d.displayName} Result Ready`, inputType: 'bool', group: 'Vision' });
         inputs.push({ ref: `${d.id}:inspPass`, tag: `i_${d.name}InspPass`, label: `${d.displayName} Inspection Pass`, inputType: 'bool', group: 'Vision' });
+        // Numeric outputs per job (vision data values — PartCount, X_Offset, etc.)
+        for (const job of (d.jobs ?? [])) {
+          for (const numOut of (job.numericOutputs ?? [])) {
+            if (!numOut.name?.trim()) continue;
+            const cleanName = numOut.name.replace(/[^a-zA-Z0-9_]/g, '');
+            const tag = `p_${d.name}_${job.name}_${cleanName}`;
+            const unitLabel = numOut.unit ? ` (${numOut.unit})` : '';
+            inputs.push({
+              ref: `${d.id}:visionOut:${job.name}:${cleanName}`,
+              tag,
+              label: `${d.displayName} ${job.name} → ${numOut.name}${unitLabel}`,
+              inputType: 'range',
+              group: 'Vision',
+            });
+          }
+        }
         break;
       case 'Robot':
         // Standard fixed inputs from tagPatterns
@@ -104,6 +120,22 @@ export function buildAvailableInputs(devices, allSMs, currentSmId, trackingField
       case 'Conveyor':
         inputs.push({ ref: `${d.id}:run`, tag: `q_Run${d.name}`, label: `${d.displayName} Running`, inputType: 'bool', group: 'Conveyors' });
         break;
+      case 'Custom': {
+        const cDef = d.customTypeDef;
+        if (cDef) {
+          for (const inp of (cDef.inputs ?? [])) {
+            if (!inp.tagPattern || !inp.name) continue;
+            const tag = inp.tagPattern.replace(/\{name\}/g, d.name);
+            inputs.push({ ref: `${d.id}:${inp.name}`, tag, label: `${d.displayName} ${inp.name}`, inputType: (inp.dataType === 'REAL') ? 'range' : 'bool', group: 'Custom Devices' });
+          }
+          for (const aio of (cDef.analogIO ?? [])) {
+            if (!aio.tagPattern || !aio.name || aio.direction !== 'input') continue;
+            const tag = aio.tagPattern.replace(/\{name\}/g, d.name);
+            inputs.push({ ref: `${d.id}:${aio.name}`, tag, label: `${d.displayName} ${aio.name}`, inputType: 'range', group: 'Custom Devices' });
+          }
+        }
+        break;
+      }
       case 'FrictionFeeder':
         inputs.push({ ref: `${d.id}:complete`, tag: `i_${d.name}FeedComplete`, label: `${d.displayName} Feed Complete`, inputType: 'bool', group: 'Feeders' });
         inputs.push({ ref: `${d.id}:ready`,    tag: `i_${d.name}Ready`,        label: `${d.displayName} Ready`,         inputType: 'bool', group: 'Feeders' });

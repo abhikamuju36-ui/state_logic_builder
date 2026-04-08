@@ -579,11 +579,96 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
   addTag(buildStateEngineTagXml(), 'StateEngine');
   addTag(buildStateHistoryTagXml(), 'StateHistory');
 
-  // q_Ready — Public so other programs can reference \ProgramName.q_Ready
-  addTag(
-    buildBoolTagXml('q_Ready', 'Station Ready', 'Public', 'Read Only'),
-    'q_Ready'
-  );
+  // ── Standard scaffold tags (1116 pattern) ─────────────────────────────
+
+  // Cycle control
+  addTag(buildBoolTagXml('CycleRunning', 'Cycle Running', 'Local'), 'CycleRunning');
+  addTag(buildBoolTagXml('CycleStopped', 'Cycle Stopped', 'Local'), 'CycleStopped');
+  addTag(buildBoolTagXml('CycleStopping', 'Cycle Stopping', 'Local'), 'CycleStopping');
+  addTag(buildTimerTagXml('CycleTimer', 'Cycle Time Accumulator', 0), 'CycleTimer');
+
+  // Supervisor mapped inputs
+  addTag(buildBoolTagXml('ManualMode', 'Manual Mode (from Supervisor)', 'Local'), 'ManualMode');
+  addTag(buildBoolTagXml('SafetyOK', 'Safety OK (from Supervisor)', 'Local'), 'SafetyOK');
+  addTag(buildBoolTagXml('FaultReset', 'Fault Reset (from Supervisor)', 'Local'), 'FaultReset');
+  addTag(buildBoolTagXml('Initialized', 'Station Initialized', 'Local'), 'Initialized');
+
+  // Fault state capture
+  addTag(buildDintTagXml('FaultState', 'State when fault occurred'), 'FaultState');
+  addTag(buildDintTagXml('RestartState', 'State to restart from after fault'), 'RestartState');
+  addTag(buildDintTagXml('SafetyStopState', 'State when safety stop occurred'), 'SafetyStopState');
+
+  // Single step
+  addTag(buildBoolTagXml('SS', 'Single Step Active', 'Local'), 'SS');
+  addTag(buildBoolTagXml('SS_OK', 'Single Step OK to Advance', 'Local'), 'SS_OK');
+  addTag(buildBoolTagXml('LocalSS', 'Local Single Step Request', 'Local'), 'LocalSS');
+  addTag(buildBoolTagXml('LocalSSONS', 'Local Single Step ONS', 'Local'), 'LocalSSONS');
+
+  // One-shot and HMI
+  addTag(buildDintTagXml('ONS', 'One-Shot Storage Bits'), 'ONS');
+  addTag(buildDintTagXml('HMI_Button', 'HMI Manual Control Buttons'), 'HMI_Button');
+  addTag(buildBoolTagXml('HMI_LocalManualOverride', 'Local Manual Override (bypasses Supervisor)', 'Local'), 'HMI_LocalManualOverride');
+
+  // Timer arrays
+  addTag(`
+<Tag Name="Timer" TagType="Base" DataType="TIMER" Dimensions="10" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata('General Purpose Timers')}
+</Description>
+</Tag>`, 'Timer');
+  addTag(`
+<Tag Name="SensorTimer" TagType="Base" DataType="TIMER" Dimensions="10" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata('Sensor Delay Timers')}
+</Description>
+</Tag>`, 'SensorTimer');
+
+  // Alarm arrays
+  addTag(`
+<Tag Name="Alarm" TagType="Base" DataType="AlarmData" Dimensions="10" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata('Station Alarm Data')}
+</Description>
+</Tag>`, 'Alarm');
+  addTag(`
+<Tag Name="Warning" TagType="Base" DataType="AlarmData" Dimensions="5" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata('Station Warning Data')}
+</Description>
+</Tag>`, 'Warning');
+
+  // Program fault handler AOI instance
+  addTag(`
+<Tag Name="ProgramFaultHandler" TagType="Base" DataType="ProgramAlarmHandler" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata('Program Alarm Handler Instance')}
+</Description>
+</Tag>`, 'ProgramFaultHandler');
+
+  // Cycle time output
+  addTag(`
+<Tag Name="p_CycleTime" TagType="Base" DataType="REAL" Radix="Float" Usage="Public" Constant="false" ExternalAccess="Read Only" OpcUaAccess="None">
+<Description>
+${cdata('Last Cycle Time (seconds)')}
+</Description>
+<Data Format="L5K">
+${cdata('0.000000')}
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="REAL" Radix="Float" Value="0.0"/>
+</Data>
+</Tag>`, 'p_CycleTime');
+
+  // Station status outputs
+  addTag(buildBoolTagXml('q_Ready', 'Station Ready', 'Public', 'Read Only'), 'q_Ready');
+  addTag(buildBoolTagXml('q_AlarmActive', 'Alarm Active', 'Output', 'Read Only'), 'q_AlarmActive');
+  addTag(buildBoolTagXml('q_WarningActive', 'Warning Active', 'Output', 'Read Only'), 'q_WarningActive');
+  addTag(buildBoolTagXml('q_AutoMode', 'Auto Mode Status', 'Output', 'Read Only'), 'q_AutoMode');
+  addTag(buildBoolTagXml('q_AutoStopped', 'Auto Stopped Status', 'Output', 'Read Only'), 'q_AutoStopped');
+  addTag(buildBoolTagXml('q_StartOK', 'Station Start OK', 'Output', 'Read Only'), 'q_StartOK');
+
+  // Debug tag
+  addTag(buildDintTagXml('Debug_DINT', 'Debug Value'), 'Debug_DINT');
 
   // Per-device tags (I/O + delay timers, NO debounce, NO fault timers)
   for (const device of sm.devices ?? []) {
@@ -937,6 +1022,31 @@ function generateAllTags(sm, orderedNodes, stepMap, trackingFields = []) {
         addTag(buildBoolTagXml(rp.inputComplete.replace(/\{name\}/g, device.name), `${device.displayName} - Cycle Complete`, 'Input'), rp.inputComplete.replace(/\{name\}/g, device.name));
         addTag(buildBoolTagXml(rp.inputAtHome.replace(/\{name\}/g, device.name),   `${device.displayName} - At Home`,       'Input'), rp.inputAtHome.replace(/\{name\}/g, device.name));
         addTag(buildBoolTagXml(rp.inputFault.replace(/\{name\}/g, device.name),    `${device.displayName} - Fault`,         'Input'), rp.inputFault.replace(/\{name\}/g, device.name));
+
+        // RIN tag instance (Robot → PLC)
+        const rinTagName = `${device.name}_RIN`;
+        const rinUdtName = `FanucRobotRIN_${device.name}`;
+        addTag(`
+<Tag Name="${rinTagName}" TagType="Base" DataType="${rinUdtName}" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata(`${device.displayName} - Robot Input Data (Robot to PLC)`)}
+</Description>
+</Tag>`, rinTagName);
+
+        // ROUT tag instance (PLC → Robot)
+        const routTagName = `${device.name}_ROUT`;
+        const routUdtName = `FanucRobotROUT_${device.name}`;
+        addTag(`
+<Tag Name="${routTagName}" TagType="Base" DataType="${routUdtName}" Constant="false" ExternalAccess="Read/Write" OpcUaAccess="None">
+<Description>
+${cdata(`${device.displayName} - Robot Output Data (PLC to Robot)`)}
+</Description>
+</Tag>`, routTagName);
+
+        // Run_Robot_Seq AOI instances + supporting tags
+        addTag(buildDintTagXml(`${device.name}_SeqReq`, `${device.displayName} Sequence Request`), `${device.name}_SeqReq`);
+        addTag(buildDintTagXml(`${device.name}_RunningSeq`, `${device.displayName} Running Sequence`), `${device.name}_RunningSeq`);
+        addTag(buildBoolTagXml(`${device.name}_ResumeOK`, `${device.displayName} Resume OK`, 'Local'), `${device.name}_ResumeOK`);
         break;
       }
 
@@ -2229,9 +2339,300 @@ function generateR03StateLogic(sm, orderedNodes, stepMap, allSMs = [], trackingF
 </Routine>`;
 }
 
+// ── R20_Alarms ────────────────────────────────────────────────────────────────
+
+function generateR20Alarms(sm, orderedNodes, stepMap) {
+  const rungs = [];
+  let rungNum = 0;
+  const devices = sm.devices ?? [];
+
+  // Auto-generate alarms for devices that have sensor verify actions
+  let alarmIdx = 0;
+  const alarmEntries = [];
+
+  for (const node of orderedNodes) {
+    const step = stepMap[node.id];
+    for (const action of (node.data?.actions ?? [])) {
+      const device = devices.find(d => d.id === action.deviceId);
+      if (!device) continue;
+
+      let faultCondition = null;
+      let alarmDesc = null;
+
+      switch (device.type) {
+        case 'PneumaticLinearActuator':
+        case 'PneumaticRotaryActuator':
+          if (action.operation === 'Extend' || action.operation === 'Retract') {
+            faultCondition = `XIC(Status.State[${step}])`;
+            alarmDesc = `${device.displayName} ${action.operation} Timeout`;
+          }
+          break;
+        case 'PneumaticGripper':
+          if (action.operation === 'Engage' || action.operation === 'Disengage') {
+            faultCondition = `XIC(Status.State[${step}])`;
+            alarmDesc = `${device.displayName} ${action.operation} Timeout`;
+          }
+          break;
+        case 'PneumaticVacGenerator':
+          if (action.operation === 'VacOn' || action.operation === 'VacOnEject') {
+            faultCondition = `XIC(Status.State[${step}])`;
+            alarmDesc = `${device.displayName} Vacuum Timeout`;
+          }
+          break;
+        case 'ServoAxis':
+          if (action.operation === 'ServoMove' || action.operation === 'ServoIncr' || action.operation === 'ServoIndex') {
+            faultCondition = `XIC(Status.State[${step}])`;
+            alarmDesc = `${device.displayName} Motion Timeout`;
+          }
+          break;
+        case 'Custom': {
+          const cDef = device.customTypeDef;
+          if (cDef) {
+            const op = (cDef.operations ?? []).find(o => o.label === action.operation);
+            if (op?.inputToVerify) {
+              faultCondition = `XIC(Status.State[${step}])`;
+              alarmDesc = `${device.displayName} ${action.operation} Timeout`;
+            }
+          }
+          break;
+        }
+      }
+
+      if (faultCondition && alarmDesc && alarmIdx < 10) {
+        alarmEntries.push({ faultCondition, alarmDesc, idx: alarmIdx });
+        alarmIdx++;
+      }
+    }
+  }
+
+  if (alarmEntries.length === 0) {
+    rungs.push(buildRung(rungNum++, 'No fault conditions defined', 'NOP();'));
+  } else {
+    for (const entry of alarmEntries) {
+      rungs.push(
+        buildRung(rungNum++, entry.alarmDesc,
+          `[${entry.faultCondition}TON(SensorTimer[${entry.idx}],?,?)XIC(SensorTimer[${entry.idx}].DN) ,XIC(Alarm[${entry.idx}].Active) XIO(FaultReset) ]OTE(Alarm[${entry.idx}].Active);`)
+      );
+    }
+  }
+
+  // Final rung: ProgramAlarmHandler AOI call
+  rungs.push(
+    buildRung(rungNum++, 'Program Alarm Handler',
+      'ProgramAlarmHandler(ProgramFaultHandler,\\Alarms.p_ProgramID,Alarm,\\Alarms.p_Active,\\Alarms.p_History,g_CPUDateTime,q_AlarmActive,q_WarningActive);')
+  );
+
+  return `
+<Routine Name="R20_Alarms" Type="RLL">
+<RLLContent>${rungs.join('')}
+</RLLContent>
+</Routine>`;
+}
+
+// ── Fanuc Robot UDT Generation ───────────────────────────────────────────────
+//
+// Generates FanucRobotRIN_{name} and FanucRobotROUT_{name} UDTs per robot device.
+// Standard signals (UOP, system config DO200+, AAMAIN handshake) are always included.
+// Project-specific DI/DO signals come from user-configured robot signals.
+
+function bitMember(name, desc, target, bit) {
+  return `<Member Name="${escapeXml(name)}" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="${target}" BitNumber="${bit}" ExternalAccess="Read/Write">
+<Description>${cdata(desc)}</Description>
+</Member>`;
+}
+
+function sintMember(name, hidden = true) {
+  return `<Member Name="${name}" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="${hidden}" ExternalAccess="Read/Write"/>`;
+}
+
+function sintMemberWithDesc(name, desc) {
+  return `<Member Name="${name}" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="false" ExternalAccess="Read/Write">
+<Description>${cdata(desc)}</Description>
+</Member>`;
+}
+
+function generateFanucRobotUDTs(robotDevices) {
+  let udts = '';
+
+  for (const robot of robotDevices) {
+    const rName = robot.name;
+    const signals = robot.signals ?? [];
+
+    // Separate user signals by direction and group
+    const userDO = signals.filter(s => s.direction === 'input' && (s.group === 'DO' || !s.group)); // Robot→PLC
+    const userDI = signals.filter(s => s.direction === 'output' && s.group === 'DI'); // PLC→Robot
+    const userRegsIn = signals.filter(s => s.direction === 'input' && s.group === 'Register');
+    const userRegsOut = signals.filter(s => s.direction === 'output' && s.group === 'Register');
+
+    // ── RIN UDT (Robot → PLC) ─────────────────────────────────────────────
+    const rinMembers = [];
+    let rinSintIdx = 0;
+
+    // Byte 0: UOP outputs UO1-UO8
+    const rinS0 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS0));
+    const uoNames = ['CMDENBL','SYSRDY','Running','Paused','HoldActive','Faulted','AtPerch','TPEnabled'];
+    const uoDescs = ['UO1 Command Enable','UO2 System Ready','UO3 Program Running','UO4 Program Paused','UO5 Hold Active','UO6 Robot Faulted','UO7 At Perch','UO8 Teach Pendant Enabled'];
+    for (let i = 0; i < 8; i++) rinMembers.push(bitMember(uoNames[i], uoDescs[i], rinS0, i));
+    rinSintIdx++;
+
+    // Byte 1: UO9-10, PNS echo SNO1-6
+    const rinS1 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS1));
+    rinMembers.push(bitMember('BatteryLow', 'UO9 Battery Low', rinS1, 0));
+    rinMembers.push(bitMember('Busy', 'UO10 Busy', rinS1, 1));
+    for (let i = 0; i < 6; i++) rinMembers.push(bitMember(`SNO${i+1}`, `SNO${i+1} PNS Echo`, rinS1, i + 2));
+    rinSintIdx++;
+
+    // Byte 2: SNO7-8, PNSAck, then system DO200-204
+    const rinS2 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS2));
+    rinMembers.push(bitMember('SNO7', 'SNO7 PNS Echo', rinS2, 0));
+    rinMembers.push(bitMember('SNO8', 'SNO8 PNS Echo', rinS2, 1));
+    rinMembers.push(bitMember('PNSAck', 'PNS Acknowledge', rinS2, 2));
+    rinMembers.push(bitMember('AutoMode', 'DO200 Auto Mode', rinS2, 3));
+    rinMembers.push(bitMember('ManualModeT1', 'DO201 Manual T1', rinS2, 4));
+    rinMembers.push(bitMember('ManualModeT2', 'DO202 Manual T2', rinS2, 5));
+    rinMembers.push(bitMember('EStopActive', 'DO203 E-Stop Active', rinS2, 6));
+    rinMembers.push(bitMember('InputSimulated', 'DO204 Input Simulated', rinS2, 7));
+    rinSintIdx++;
+
+    // Byte 3: DO205-212 (OutputSimulated, Override100, ColGuard, Collision, AtRefPosn1-4)
+    const rinS3 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS3));
+    rinMembers.push(bitMember('OutputSimulated', 'DO205 Output Simulated', rinS3, 0));
+    rinMembers.push(bitMember('Override100', 'DO206 Override at 100%', rinS3, 1));
+    rinMembers.push(bitMember('ColGuardEnabled', 'DO207 Collision Guard Enabled', rinS3, 2));
+    rinMembers.push(bitMember('CollisionDetected', 'DO208 Collision Detected', rinS3, 3));
+    for (let i = 0; i < 4; i++) rinMembers.push(bitMember(`AtRefPosn${i+1}`, `DO${209+i} At Reference Position ${i+1}`, rinS3, 4 + i));
+    rinSintIdx++;
+
+    // Byte 4: AtRefPosn5-10, SingleChannelFault, HeartBeat
+    const rinS4 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS4));
+    for (let i = 4; i < 10; i++) rinMembers.push(bitMember(`AtRefPosn${i+1}`, `DO${209+i} At Reference Position ${i+1}`, rinS4, i - 4));
+    rinMembers.push(bitMember('SingleChannelFault', 'DO219 Safety Single Channel Fault', rinS4, 6));
+    rinMembers.push(bitMember('HeartBeat', 'DO220 Heartbeat', rinS4, 7));
+    rinSintIdx++;
+
+    // Byte 5: SoftHeartBeat, SingleStep, AppFault, AAMAIN status (CMDComplete..ReqPLCResetCMD)
+    const rinS5 = `ZZZZZZZZZZRIN_${rinSintIdx}`;
+    rinMembers.push(sintMember(rinS5));
+    rinMembers.push(bitMember('SoftHeartBeat', 'DO221 Soft Heartbeat', rinS5, 0));
+    rinMembers.push(bitMember('SingleStep', 'DO222 Single Step', rinS5, 1));
+    rinMembers.push(bitMember('AppFault', 'DO223 Application Fault', rinS5, 2));
+    rinMembers.push(bitMember('CMDComplete', 'DO224 Command Complete', rinS5, 3));
+    rinMembers.push(bitMember('CMDRunning', 'DO225 Command Running', rinS5, 4));
+    rinMembers.push(bitMember('CMDFailed', 'DO226 Command Failed', rinS5, 5));
+    rinMembers.push(bitMember('WaitingForCMD', 'DO227 Waiting for Command', rinS5, 6));
+    rinMembers.push(bitMember('ReqPLCResetCMD', 'DO228 Request PLC Reset CMD', rinS5, 7));
+    rinSintIdx++;
+
+    // Group outputs (SINT registers)
+    rinMembers.push(sintMemberWithDesc('CMDEcho', 'GO3 AAMAIN Command Echo'));
+    rinMembers.push(sintMemberWithDesc('AppFaultCode', 'GO2 Application Fault Code'));
+
+    // User-configured DO signals (Robot→PLC, project-specific)
+    if (userDO.length > 0) {
+      const doBytes = Math.ceil(userDO.length / 8);
+      for (let bi = 0; bi < doBytes; bi++) {
+        const backName = `ZZZZZZZZZZRIN_DO_${bi}`;
+        rinMembers.push(sintMember(backName));
+        for (let bj = 0; bj < 8; bj++) {
+          const sigIdx = bi * 8 + bj;
+          if (sigIdx >= userDO.length) break;
+          const sig = userDO[sigIdx];
+          rinMembers.push(bitMember(sig.name, `DO[${sig.number ?? sigIdx+1}] ${sig.name}`, backName, bj));
+        }
+      }
+    }
+
+    // User-configured input registers (Robot→PLC, DINT/REAL)
+    for (const reg of userRegsIn) {
+      const dt = reg.dataType === 'REAL' ? 'REAL' : 'DINT';
+      const radix = dt === 'REAL' ? 'Float' : 'Decimal';
+      rinMembers.push(`<Member Name="${escapeXml(reg.name)}" DataType="${dt}" Dimension="0" Radix="${radix}" Hidden="false" ExternalAccess="Read/Write">
+<Description>${cdata(`R[${reg.number ?? 0}] ${reg.name}`)}</Description>
+</Member>`);
+    }
+
+    udts += `
+<DataType Name="FanucRobotRIN_${rName}" Family="NoFamily" Class="User">
+<Description>${cdata(`${robot.displayName} - Robot Inputs (Robot to PLC)`)}</Description>
+<Members>
+${rinMembers.join('\n')}
+</Members>
+</DataType>`;
+
+    // ── ROUT UDT (PLC → Robot) ────────────────────────────────────────────
+    const routMembers = [];
+    let routSintIdx = 0;
+
+    // Byte 0: UOP inputs UI1-UI8
+    const routS0 = `ZZZZZZZZZZROUT_${routSintIdx}`;
+    routMembers.push(sintMember(routS0));
+    const uiNames = ['ImmediateStop','Hold','SafeSpeed','CycleStop','FaultReset','Start','Home','Enable'];
+    const uiDescs = ['UI1 Immediate Stop (NC)','UI2 Hold (NC)','UI3 Safe Speed (NC)','UI4 Cycle Stop','UI5 Fault Reset','UI6 Start','UI7 Home','UI8 Enable'];
+    for (let i = 0; i < 8; i++) routMembers.push(bitMember(uiNames[i], uiDescs[i], routS0, i));
+    routSintIdx++;
+
+    // Byte 1: PNS1-8
+    const routS1 = `ZZZZZZZZZZROUT_${routSintIdx}`;
+    routMembers.push(sintMember(routS1));
+    for (let i = 0; i < 8; i++) routMembers.push(bitMember(`PNS${i+1}`, `PNS${i+1} Program Select`, routS1, i));
+    routSintIdx++;
+
+    // Byte 2: PNSStrobe, ProductionStart, + reserved
+    const routS2 = `ZZZZZZZZZZROUT_${routSintIdx}`;
+    routMembers.push(sintMember(routS2));
+    routMembers.push(bitMember('PNSStrobe', 'PNS Strobe', routS2, 0));
+    routMembers.push(bitMember('ProductionStart', 'UI18 Production Start', routS2, 1));
+    routMembers.push(bitMember('PLCAuto', 'PLC in Auto Mode', routS2, 2));
+    routMembers.push(bitMember('PLCRunning', 'PLC Cycle Running', routS2, 3));
+    routSintIdx++;
+
+    // Group input: Command (SINT)
+    routMembers.push(sintMemberWithDesc('Command', 'GI2 AAMAIN Command Number'));
+
+    // User-configured DI signals (PLC→Robot, project-specific)
+    if (userDI.length > 0) {
+      const diBytes = Math.ceil(userDI.length / 8);
+      for (let bi = 0; bi < diBytes; bi++) {
+        const backName = `ZZZZZZZZZZROUT_DI_${bi}`;
+        routMembers.push(sintMember(backName));
+        for (let bj = 0; bj < 8; bj++) {
+          const sigIdx = bi * 8 + bj;
+          if (sigIdx >= userDI.length) break;
+          const sig = userDI[sigIdx];
+          routMembers.push(bitMember(sig.name, `DI[${sig.number ?? sigIdx+1}] ${sig.name}`, backName, bj));
+        }
+      }
+    }
+
+    // User-configured output registers (PLC→Robot, DINT/REAL)
+    for (const reg of userRegsOut) {
+      const dt = reg.dataType === 'REAL' ? 'REAL' : 'DINT';
+      const radix = dt === 'REAL' ? 'Float' : 'Decimal';
+      routMembers.push(`<Member Name="${escapeXml(reg.name)}" DataType="${dt}" Dimension="0" Radix="${radix}" Hidden="false" ExternalAccess="Read/Write">
+<Description>${cdata(`R[${reg.number ?? 0}] ${reg.name}`)}</Description>
+</Member>`);
+    }
+
+    udts += `
+<DataType Name="FanucRobotROUT_${rName}" Family="NoFamily" Class="User">
+<Description>${cdata(`${robot.displayName} - Robot Outputs (PLC to Robot)`)}</Description>
+<Members>
+${routMembers.join('\n')}
+</Members>
+</DataType>`;
+  }
+
+  return udts;
+}
+
 // ── UDT Definitions ──────────────────────────────────────────────────────────
 
-export function generateDataTypes(hasServos = false, trackingFields = []) {
+export function generateDataTypes(hasServos = false, trackingFields = [], robotDevices = []) {
   let servoUDT = '';
   if (hasServos) {
     servoUDT = `
@@ -2282,8 +2683,14 @@ ${boolMembers.join('\n')}
 </DataType>`;
   }
 
+  // ── Fanuc Robot UDTs (per robot device) ──────────────────────────────────
+  let robotUDTs = '';
+  if (robotDevices.length > 0) {
+    robotUDTs = generateFanucRobotUDTs(robotDevices);
+  }
+
   return `
-<DataTypes Use="Context">${servoUDT}${partTrackingUDT}
+<DataTypes Use="Context">${servoUDT}${partTrackingUDT}${robotUDTs}
 <DataType Name="StateLogicControl" Family="NoFamily" Class="User">
 <Members>
 <Member Name="StateReg" DataType="DINT" Dimension="0" Radix="Decimal" Hidden="false" ExternalAccess="Read/Write">
@@ -2340,6 +2747,36 @@ ${cdata('State Timeout Fault')}
 <Member Name="TransitionTimerDone" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="ZZZZZZZZZZState_Logi2" BitNumber="2" ExternalAccess="Read/Write">
 <Description>
 ${cdata('State Transition Time Done')}
+</Description>
+</Member>
+</Members>
+</DataType>
+<DataType Name="AlarmData" Family="NoFamily" Class="User">
+<Members>
+<Member Name="ZZZZZZZZZZAlarmDat0" DataType="SINT" Dimension="0" Radix="Decimal" Hidden="true" ExternalAccess="Read/Write"/>
+<Member Name="Active" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="ZZZZZZZZZZAlarmDat0" BitNumber="0" ExternalAccess="Read/Write">
+<Description>
+${cdata('Alarm Active')}
+</Description>
+</Member>
+<Member Name="Latched" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="ZZZZZZZZZZAlarmDat0" BitNumber="1" ExternalAccess="Read/Write">
+<Description>
+${cdata('Alarm Latched')}
+</Description>
+</Member>
+<Member Name="IsWarning" DataType="BIT" Dimension="0" Radix="Decimal" Hidden="false" Target="ZZZZZZZZZZAlarmDat0" BitNumber="2" ExternalAccess="Read/Write">
+<Description>
+${cdata('Is Warning (not fault)')}
+</Description>
+</Member>
+<Member Name="Count" DataType="DINT" Dimension="0" Radix="Decimal" Hidden="false" ExternalAccess="Read/Write">
+<Description>
+${cdata('Alarm Occurrence Count')}
+</Description>
+</Member>
+<Member Name="Description" DataType="STRING" Dimension="0" Hidden="false" ExternalAccess="Read/Write">
+<Description>
+${cdata('Alarm Description Text')}
 </Description>
 </Member>
 </Members>
@@ -2433,9 +2870,228 @@ ${cdata('LIMIT(Min,Actual,Max)OTE(In_Range);')}
 </AddOnInstructionDefinition>`;
 }
 
+// ── ProgramAlarmHandler AOI ──────────────────────────────────────────────────
+
+function generateAOIProgramAlarmHandler() {
+  return `
+<AddOnInstructionDefinition Name="ProgramAlarmHandler" Class="Standard" Revision="1.0" ExecutePrescan="false" ExecutePostscan="false" ExecuteEnableInFalse="false" CreatedDate="2024-01-01T00:00:00.000Z" CreatedBy="SDC" EditedDate="2024-01-01T00:00:00.000Z" EditedBy="SDC" SoftwareRevision="v37.00">
+<Description>
+${cdata('Processes AlarmData array and sets q_AlarmActive / q_WarningActive outputs')}
+</Description>
+<Parameters>
+<Parameter Name="EnableIn" TagType="Base" DataType="BOOL" Usage="Input" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only">
+<Description>
+${cdata('Enable Input - System Defined Parameter')}
+</Description>
+</Parameter>
+<Parameter Name="EnableOut" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only">
+<Description>
+${cdata('Enable Output - System Defined Parameter')}
+</Description>
+</Parameter>
+<Parameter Name="ProgramID" TagType="Base" DataType="DINT" Usage="Input" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</DefaultData>
+</Parameter>
+<Parameter Name="Alarms" TagType="Base" DataType="AlarmData" Dimensions="10" Usage="InOut" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="Active" TagType="Base" DataType="AlarmData" Dimensions="100" Usage="InOut" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="History" TagType="Base" DataType="AlarmData" Dimensions="100" Usage="InOut" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="DateTime" TagType="Base" DataType="DINT" Dimensions="7" Usage="InOut" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="AlarmActive" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</DefaultData>
+</Parameter>
+<Parameter Name="WarningActive" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</DefaultData>
+</Parameter>
+</Parameters>
+<LocalTags>
+<LocalTag Name="idx" DataType="DINT" Radix="Decimal" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</DefaultData>
+</LocalTag>
+<LocalTag Name="anyAlarm" DataType="BOOL" Radix="Decimal" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</DefaultData>
+</LocalTag>
+<LocalTag Name="anyWarning" DataType="BOOL" Radix="Decimal" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">
+${cdata('0')}
+</DefaultData>
+<DefaultData Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</DefaultData>
+</LocalTag>
+</LocalTags>
+<Routines>
+<Routine Name="Logic" Type="ST">
+<STContent>
+<Line Number="0">
+<![CDATA[anyAlarm := 0;]]>
+</Line>
+<Line Number="1">
+<![CDATA[anyWarning := 0;]]>
+</Line>
+<Line Number="2">
+<![CDATA[FOR idx := 0 TO 9 BY 1 DO]]>
+</Line>
+<Line Number="3">
+<![CDATA[  IF Alarms[idx].Active AND NOT Alarms[idx].IsWarning THEN]]>
+</Line>
+<Line Number="4">
+<![CDATA[    anyAlarm := 1;]]>
+</Line>
+<Line Number="5">
+<![CDATA[  END_IF;]]>
+</Line>
+<Line Number="6">
+<![CDATA[  IF Alarms[idx].Active AND Alarms[idx].IsWarning THEN]]>
+</Line>
+<Line Number="7">
+<![CDATA[    anyWarning := 1;]]>
+</Line>
+<Line Number="8">
+<![CDATA[  END_IF;]]>
+</Line>
+<Line Number="9">
+<![CDATA[END_FOR;]]>
+</Line>
+<Line Number="10">
+<![CDATA[AlarmActive := anyAlarm;]]>
+</Line>
+<Line Number="11">
+<![CDATA[WarningActive := anyWarning;]]>
+</Line>
+</STContent>
+</Routine>
+</Routines>
+<Dependencies>
+<Dependency Type="DataType" Name="AlarmData"/>
+</Dependencies>
+</AddOnInstructionDefinition>`;
+}
+
+// ── Run_Robot_Seq AOI ────────────────────────────────────────────────────────
+
+function generateAOIRunRobotSeq() {
+  return `
+<AddOnInstructionDefinition Name="Run_Robot_Seq" Class="Standard" Revision="1.0" ExecutePrescan="false" ExecutePostscan="false" ExecuteEnableInFalse="true" CreatedDate="2024-01-01T00:00:00.000Z" CreatedBy="SDC" EditedDate="2024-01-01T00:00:00.000Z" EditedBy="SDC" SoftwareRevision="v37.00">
+<Description>
+${cdata('Manages a single robot sequence request through the AAMAIN command handshake. Rung-in triggers the sequence; outputs track status.')}
+</Description>
+<Parameters>
+<Parameter Name="EnableIn" TagType="Base" DataType="BOOL" Usage="Input" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only">
+<Description>${cdata('Enable Input - System Defined Parameter')}</Description>
+</Parameter>
+<Parameter Name="EnableOut" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="false" Visible="false" ExternalAccess="Read Only">
+<Description>${cdata('Enable Output - System Defined Parameter')}</Description>
+</Parameter>
+<Parameter Name="Sequence_Number" TagType="Base" DataType="SINT" Usage="Input" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="SINT" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Timeout_s" TagType="Base" DataType="DINT" Usage="Input" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="DINT" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Running_Sequence" TagType="Base" DataType="DINT" Usage="InOut" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="Seq_Request" TagType="Base" DataType="DINT" Usage="InOut" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="CMDComplete" TagType="Base" DataType="BOOL" Usage="InOut" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="CMDFailed" TagType="Base" DataType="BOOL" Usage="InOut" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="CMDRunning" TagType="Base" DataType="BOOL" Usage="InOut" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read/Write"/>
+<Parameter Name="Pending" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Requested" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Running" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Complete" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Failed" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+<Parameter Name="Timed_Out" TagType="Base" DataType="BOOL" Usage="Output" Radix="Decimal" Required="true" Visible="true" ExternalAccess="Read Only">
+<DefaultData Format="L5K">${cdata('0')}</DefaultData>
+<DefaultData Format="Decorated"><DataValue DataType="BOOL" Radix="Decimal" Value="0"/></DefaultData>
+</Parameter>
+</Parameters>
+<LocalTags>
+<LocalTag Name="TimeoutTimer" DataType="TIMER" ExternalAccess="Read/Write">
+<DefaultData Format="L5K">${cdata('[0,0,0]')}</DefaultData>
+<DefaultData Format="Decorated">
+<Structure DataType="TIMER">
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="ACC" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="EN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="TT" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+</Structure>
+</DefaultData>
+</LocalTag>
+</LocalTags>
+<Routines>
+<Routine Name="Logic" Type="ST">
+<STContent>
+<Line Number="0"><![CDATA[(* Run_Robot_Seq — manages single sequence through AAMAIN handshake *)]]></Line>
+<Line Number="1"><![CDATA[IF EnableIn AND NOT Pending AND NOT Requested AND NOT Running AND NOT Complete AND NOT Failed THEN]]></Line>
+<Line Number="2"><![CDATA[  Pending := 1; Requested := 0; Running := 0; Complete := 0; Failed := 0; Timed_Out := 0;]]></Line>
+<Line Number="3"><![CDATA[END_IF;]]></Line>
+<Line Number="4"><![CDATA[IF Pending AND Seq_Request = 0 THEN]]></Line>
+<Line Number="5"><![CDATA[  Seq_Request := Sequence_Number; Pending := 0; Requested := 1;]]></Line>
+<Line Number="6"><![CDATA[END_IF;]]></Line>
+<Line Number="7"><![CDATA[IF Requested AND Running_Sequence = Sequence_Number THEN]]></Line>
+<Line Number="8"><![CDATA[  Requested := 0; Running := 1;]]></Line>
+<Line Number="9"><![CDATA[  IF Timeout_s > 0 THEN TimeoutTimer.PRE := Timeout_s * 1000; END_IF;]]></Line>
+<Line Number="10"><![CDATA[END_IF;]]></Line>
+<Line Number="11"><![CDATA[IF Running AND CMDComplete THEN Running := 0; Complete := 1; END_IF;]]></Line>
+<Line Number="12"><![CDATA[IF Running AND CMDFailed THEN Running := 0; Failed := 1; END_IF;]]></Line>
+<Line Number="13"><![CDATA[IF Running AND Timeout_s > 0 THEN]]></Line>
+<Line Number="14"><![CDATA[  TimeoutTimer.TimerEnable := 1;]]></Line>
+<Line Number="15"><![CDATA[  IF TimeoutTimer.DN THEN Running := 0; Timed_Out := 1; END_IF;]]></Line>
+<Line Number="16"><![CDATA[END_IF;]]></Line>
+<Line Number="17"><![CDATA[IF NOT EnableIn THEN]]></Line>
+<Line Number="18"><![CDATA[  Pending := 0; Requested := 0; Running := 0; Complete := 0; Failed := 0; Timed_Out := 0;]]></Line>
+<Line Number="19"><![CDATA[  TimeoutTimer.ACC := 0; TimeoutTimer.TimerEnable := 0;]]></Line>
+<Line Number="20"><![CDATA[END_IF;]]></Line>
+</STContent>
+</Routine>
+</Routines>
+</AddOnInstructionDefinition>`;
+}
+
 // ── AOI Definition (State_Engine_128Max) ─────────────────────────────────────
 
-export function generateAOI(hasServos = false) {
+export function generateAOI(hasServos = false, hasRobots = false) {
   const boolL5K = generate128BoolL5K();
   const boolDec = generate128BoolDecorated();
 
@@ -2638,6 +3294,8 @@ ${stContent}
 <Dependency Type="DataType" Name="StateLogicControl"/>
 </Dependencies>
 </AddOnInstructionDefinition>${hasServos ? generateAOIRangeCheck() : ''}
+${generateAOIProgramAlarmHandler()}
+${hasRobots ? generateAOIRunRobotSeq() : ''}
 </AddOnInstructionDefinitions>`;
 }
 
@@ -2741,6 +3399,7 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
 
   const hasServos = (sm.devices ?? []).some(d => d.type === 'ServoAxis');
   const hasAnalogSensors = (sm.devices ?? []).some(d => d.type === 'AnalogSensor');
+  const robotDevices = (sm.devices ?? []).filter(d => d.type === 'Robot');
   const needsRangeCheck = hasServos || hasAnalogSensors;
 
   const tagsXml = generateAllTags(sm, orderedNodes, stepMap, trackingFields);
@@ -2748,9 +3407,10 @@ export function exportToL5X(sm, allSMs = [], trackingFields = []) {
   const r01 = generateR01Inputs(sm);
   const r02 = generateR02StateTransitions(sm, orderedNodes, stepMap, allSMs, trackingFields);
   const r03 = generateR03StateLogic(sm, orderedNodes, stepMap, allSMs, trackingFields);
+  const r20 = generateR20Alarms(sm, orderedNodes, stepMap);
 
-  const dataTypes = generateDataTypes(hasServos, trackingFields);
-  const aoi = generateAOI(needsRangeCheck);
+  const dataTypes = generateDataTypes(hasServos, trackingFields, robotDevices);
+  const aoi = generateAOI(needsRangeCheck, robotDevices.length > 0);
   const contextPrograms = generateCrossSmContextPrograms(sm, allSMs);
 
   const now = new Date().toUTCString();
@@ -2774,6 +3434,7 @@ ${r00}
 ${r01}
 ${r02}
 ${r03}
+${r20}
 </Routines>
 </Program>
 </Programs>

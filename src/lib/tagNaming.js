@@ -321,6 +321,53 @@ export function getDeviceTags(device) {
       }
       break;
 
+    case 'Custom': {
+      const cDef = device.customTypeDef;
+      if (!cDef) break;
+      // Custom outputs
+      for (const out of (cDef.outputs ?? [])) {
+        if (!out.tagPattern) continue;
+        tags.push({
+          name: resolvePattern(out.tagPattern, device),
+          usage: 'Output',
+          dataType: 'BOOL',
+          description: `${device.displayName} - ${out.name} output`,
+        });
+      }
+      // Custom inputs
+      for (const inp of (cDef.inputs ?? [])) {
+        if (!inp.tagPattern) continue;
+        tags.push({
+          name: resolvePattern(inp.tagPattern, device),
+          usage: 'Input',
+          dataType: inp.dataType || 'BOOL',
+          description: `${device.displayName} - ${inp.name} input`,
+        });
+      }
+      // Analog I/O
+      for (const aio of (cDef.analogIO ?? [])) {
+        if (!aio.tagPattern) continue;
+        tags.push({
+          name: resolvePattern(aio.tagPattern, device),
+          usage: aio.direction === 'input' ? 'Input' : 'Output',
+          dataType: 'REAL',
+          description: `${device.displayName} - ${aio.name} (analog)`,
+        });
+      }
+      // Timers from operations
+      for (const op of (cDef.operations ?? [])) {
+        if (!op.timerSuffix) continue;
+        tags.push({
+          name: `${device.name}${op.timerSuffix}`,
+          usage: 'Local',
+          dataType: 'TIMER',
+          description: `${device.displayName} - ${op.label} verify delay`,
+          preMs: op.defaultTimerMs ?? 500,
+        });
+      }
+      break;
+    }
+
     case 'VisionSystem':
       tags.push({
         name: resolvePattern(patterns.trigReady, device),
@@ -348,6 +395,19 @@ export function getDeviceTags(device) {
         description: `${device.displayName} - Trigger Dwell`,
         preMs: device.trigDwellMs ?? 500,
       });
+      // Numeric outputs per job (vision data values — X_Offset, PartCount, etc.)
+      for (const job of (device.jobs ?? [])) {
+        for (const numOut of (job.numericOutputs ?? [])) {
+          if (!numOut.name?.trim()) continue;
+          const tagName = `p_${device.name}_${job.name}_${numOut.name.replace(/[^a-zA-Z0-9_]/g, '')}`;
+          tags.push({
+            name: tagName,
+            usage: 'Public',
+            dataType: 'REAL',
+            description: `${device.displayName} ${job.name} - ${numOut.name}${numOut.unit ? ` (${numOut.unit})` : ''}`,
+          });
+        }
+      }
       break;
   }
 
@@ -381,6 +441,16 @@ export function getParameterTag(device, allStateMachines = []) {
  * Get the sensor tag name for verifying a specific operation on a device
  */
 export function getSensorTagForOperation(device, operation) {
+  // Custom device: resolve from customTypeDef operations
+  if (device.type === 'Custom' && device.customTypeDef) {
+    const cOp = device.customTypeDef.operations?.find(o => o.value === operation);
+    if (cOp?.inputToVerify) {
+      const inp = device.customTypeDef.inputs?.find(i => i.name === cOp.inputToVerify);
+      if (inp?.tagPattern) return resolvePattern(inp.tagPattern, device);
+    }
+    return null;
+  }
+
   const patterns = DEVICE_TYPES[device.type]?.tagPatterns;
   if (!patterns) return null;
 
@@ -420,6 +490,16 @@ export function getSensorTagForOperation(device, operation) {
  * Get the output tag name for an operation
  */
 export function getOutputTagForOperation(device, operation) {
+  // Custom device: resolve from customTypeDef operations
+  if (device.type === 'Custom' && device.customTypeDef) {
+    const cOp = device.customTypeDef.operations?.find(o => o.value === operation);
+    if (cOp?.outputsToEnergize?.length > 0) {
+      const out = device.customTypeDef.outputs?.find(o => o.name === cOp.outputsToEnergize[0]);
+      if (out?.tagPattern) return resolvePattern(out.tagPattern, device);
+    }
+    return null;
+  }
+
   const patterns = DEVICE_TYPES[device.type]?.tagPatterns;
   if (!patterns) return null;
 
@@ -457,6 +537,13 @@ export function getOutputTagForOperation(device, operation) {
  * Get the delay timer tag for an operation
  */
 export function getDelayTimerForOperation(device, operation) {
+  // Custom device: resolve from customTypeDef operations
+  if (device.type === 'Custom' && device.customTypeDef) {
+    const cOp = device.customTypeDef.operations?.find(o => o.value === operation);
+    if (cOp?.timerSuffix) return `${device.name}${cOp.timerSuffix}`;
+    return null;
+  }
+
   const patterns = DEVICE_TYPES[device.type]?.tagPatterns;
   if (!patterns) return null;
 
